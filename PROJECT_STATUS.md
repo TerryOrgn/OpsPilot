@@ -732,3 +732,372 @@ OpsPilot v1 当前已经能够：
 > REOPENED 通知持久化尚未验证。
 >
 > 请从 NEXT-001 开始，每次只安排一个可执行的小任务，并提供验收标准。
+> 
+
+
+下面是今天（2026-10-19）OpsPilot v1 的开发记录，采用 Markdown 格式，可以直接追加到 `PROJECT_STATUS.md`。
+
+内容依据今天实际执行的 Python 测试和 MySQL 查询结果整理，区分了**已验证功能、已实现但未验证功能、待开发事项**。
+
+---
+
+# OpsPilot v1 — 开发进度记录
+
+## 2026-10-19｜Phase 7：Notification Dispatcher 可靠性增强
+
+### 一、今日开发概述
+
+今日重点完善 OpsPilot v1 的通知处理模块（Notification Dispatcher），主要围绕以下能力展开：
+
+1. 通知发送失败后的自动重试。
+2. 最大重试次数控制。
+3. MySQL 并发安全任务领取。
+4. Dispatcher 领取任务状态管理。
+5. Claim Token 领取身份校验。
+6. 通知状态确认机制。
+
+**今日成果：完成通知重试、并发领取和 Claim Token 基础能力验证。**
+
+当前系统已具备基础的通知可靠性机制，但通知领取、发送与确认尚未整合成完整工作流。
+
+### 二、数据库结构变更
+
+修改表：`JOB_NOTIFICATION_HISTORY`
+
+**1. 新增字段**
+
+| 字段 | 类型 | 用途 | 状态 |
+|---|---|---|---|
+| PROCESSING_STARTED_AT | DATETIME(3) NULL | 记录通知任务开始处理时间 | 已完成 |
+| CLAIM_TOKEN | VARCHAR(36) NULL | 记录 Dispatcher 领取任务的唯一标识 | 已完成 |
+
+**2. 扩展通知状态约束**
+
+修改 `CHK_NOTIFICATION_STATUS`，允许以下状态：
+
+```text
+PENDING
+PROCESSING
+SENT
+FAILED
+```
+
+状态含义：
+
+| 状态 | 含义 |
+|---|---|
+| PENDING | 等待发送 |
+| PROCESSING | 已被 Dispatcher 领取，正在处理 |
+| SENT | 通知发送成功 |
+| FAILED | 通知发送失败，可能等待重试 |
+
+其中，`FAILED` 且 `RETRY_COUNT >= 3` 的通知不再自动重试。
+
+### 三、Python 模块修改记录
+
+#### 3.1 notification_dispatcher.py
+
+完善失败重试机制。
+
+核心参数：
+
+```python
+MAX_RETRY_COUNT = 3
+```
+
+实现逻辑：
+
+- 查询 `PENDING` 和 `FAILED` 状态的通知。
+- 仅处理 `RETRY_COUNT < 3` 的通知。
+- 发送成功后更新状态为 `SENT`。
+- 发送成功后清空 `LAST_ERROR_MESSAGE`。
+- 发送失败后更新状态为 `FAILED`。
+- 每次发送失败，`RETRY_COUNT` 增加 1。
+- 通过 `cursor.rowcount` 检查成功状态更新的影响行数。
+
+已验证状态转换：
+
+```text
+PENDING → SENT
+
+PENDING → FAILED
+
+FAILED → SENT
+
+FAILED → FAILED
+
+FAILED（RETRY_COUNT=3）→ 停止重试
+```
+
+#### 3.2 notification_claim.py（新增）
+
+新增函数：
+
+```python
+claim_notifications(limit=10, notification_type="CONSOLE")
+```
+
+实现功能：
+
+- 开启 MySQL 事务。
+- 使用 `SELECT ... FOR UPDATE OF n SKIP LOCKED` 领取通知。
+- 仅领取 `PENDING` 或符合重试条件的 `FAILED` 通知。
+- 将领取成功的通知更新为 `PROCESSING`。
+- 记录 `PROCESSING_STARTED_AT`。
+- 使用 `uuid4()` 生成唯一 `CLAIM_TOKEN`。
+- 将 Claim Token 保存到数据库并返回调用方。
+- 领取成功后提交事务，释放数据库行锁。
+- 发生异常时执行事务回滚。
+
+数据库版本：
+
+```text
+MySQL 8.4.9
+```
+
+已验证支持 `FOR UPDATE SKIP LOCKED`。
+
+#### 3.3 notification_confirmation.py（新增）
+
+新增函数：
+
+```python
+confirm_notification_sent(notification_id, claim_token)
+```
+
+实现基于 Claim Token 的通知完成确认。
+
+核心 SQL 条件：
+
+```sql
+WHERE ID = %s
+  AND NOTIFICATION_STATUS = 'PROCESSING'
+  AND CLAIM_TOKEN = %s
+```
+
+只有状态为 `PROCESSING` 且 Claim Token 匹配时，才允许更新为 `SENT`。
+
+成功确认后：
+
+```text
+NOTIFICATION_STATUS = SENT
+SENT_AT = 当前时间
+CLAIM_TOKEN = NULL
+PROCESSING_STARTED_AT = NULL
+LAST_ERROR_MESSAGE = NULL
+```
+
+**当前验证状态：错误 Token 拒绝测试通过；正确 Token 确认测试尚未执行。**
+
+### 四、今日测试记录
+
+| 测试脚本 / 场景 | 验证内容 | 结果 |
+|---|---|---|
+| test_notification_retry.py | FAILED → SENT 重试成功 | PASS |
+| test_notification_max_retry.py | 连续失败 3 次后停止重试 | PASS |
+| test_notification_claim.py | 首次领取成功，第二次无法重复领取 | PASS |
+| test_notification_concurrent.py | 两个 Dispatcher 并发领取同一条通知 | PASS |
+| MySQL 双 Session 行锁测试 | SKIP LOCKED 跳过被锁定记录 | PASS |
+| test_notification_claim_token.py | Claim Token 生成、持久化及防重复领取 | PASS |
+| test_notification_invalid_token.py | 错误 Token 无法更新通知状态 | PASS |
+| test_notification_valid_token.py | 正确 Token 确认及重复确认拒绝 | NOT RUN |
+
+**关键测试结果**
+
+通知 ID=4：
+
+```text
+FAILED → SENT
+RETRY_COUNT = 1
+LAST_ERROR_MESSAGE = NULL
+SENT_AT = 2026-10-19 17:06:24.688
+```
+
+通知 ID=5：
+
+```text
+连续失败 3 次
+最终状态 = FAILED
+RETRY_COUNT = 3
+第四次调度处理数量 = 0
+```
+
+通知 ID=6：
+
+```text
+第一次领取 = 1
+第二次领取 = 0
+最终状态 = PROCESSING
+```
+
+通知 ID=7：
+
+```text
+Dispatcher A = [7]
+Dispatcher B = []
+合计领取数量 = 1
+最终状态 = PROCESSING
+```
+
+通知 ID=9：
+
+```text
+STATUS = PROCESSING
+CLAIM_TOKEN = 051a42be-62bf-45e5-9003-d1bbe2ed0a78
+```
+
+错误 Token 测试：
+
+```text
+[CONFIRM] REJECTED ID=9
+[TEST] PASS：错误 Token 被拒绝
+```
+
+数据库验证：
+
+```text
+STATUS = PROCESSING
+CLAIM_TOKEN 保持不变
+SENT_AT = NULL
+```
+
+### 五、今日遇到的问题及解决方案
+
+**问题 1：Dispatcher 输出 SENT，但数据库仍然为 FAILED**
+
+现象：
+
+```text
+[DISPATCHER] SENT ID=4
+```
+
+数据库状态：
+
+```text
+NOTIFICATION_STATUS = FAILED
+```
+
+处理：
+
+- 检查 UPDATE 的 WHERE 条件。
+- 确保成功更新同时支持 `PENDING` 和 `FAILED`。
+- 增加 `cursor.rowcount` 检查。
+- 检查事务提交位置。
+
+最终验证：
+
+```text
+[DISPATCHER] SENT UPDATE ID=4 UPDATED_ROWS=1
+```
+
+数据库状态成功更新为 `SENT`。
+
+注：原始异常的唯一根因未被单独确认，最终修复版本通过测试。
+
+**问题 2：MySQL CHECK 约束拒绝 PROCESSING 状态**
+
+异常：
+
+```text
+pymysql.err.OperationalError:
+(3819, "Check constraint 'CHK_NOTIFICATION_STATUS' is violated.")
+```
+
+原因：
+
+数据库原有 CHECK 约束未包含新状态 `PROCESSING`。
+
+解决：
+
+更新 `CHK_NOTIFICATION_STATUS`，增加 `PROCESSING`。
+
+重新运行 `test_notification_claim.py` 后通过。
+
+### 六、当前架构
+
+```text
+JOB Monitor
+     |
+     v
+Alert Manager
+     |
+     v
+Transactional Outbox
+     |
+     v
+JOB_NOTIFICATION_HISTORY
+     |
+     | PENDING / FAILED
+     v
+Notification Claim
+     |
+     | SELECT FOR UPDATE SKIP LOCKED
+     | UUID Claim Token
+     v
+PROCESSING
+     |
+     | 尚未完成工作流整合
+     v
+Notification Sender
+     |
+     v
+Token-based Confirmation
+     |
+     v
+SENT / FAILED
+```
+
+说明：目前 `notification_dispatcher.py` 的旧发送流程与新增的 `notification_claim.py`、`notification_confirmation.py` 仍是独立实现，尚未整合。
+
+### 七、待解决的可靠性问题
+
+| 问题 | 当前状态 |
+|---|---|
+| 正确 Claim Token 确认 | 待测试 |
+| 旧 Token 重复确认拒绝 | 待测试 |
+| 发送失败时的 Token 校验 | 待实现 |
+| PROCESSING 超时恢复 | 待实现 |
+| 旧 Dispatcher 超时后状态更新防护 | 待测试 |
+| Claim → Send → Confirm 流程整合 | 待实现 |
+| 通知发送异常与数据库异常隔离 | 待完善 |
+| 重试退避间隔 | 待实现 |
+| Dispatcher 自动调度 | 待实现 |
+| 外部通知接口幂等性 | 待设计 |
+
+特别注意：
+
+**Claim Token 可以限制旧 Dispatcher 修改数据库状态，但无法阻止已经发生的外部通知发送。**
+
+因此，当前设计尚不能保证通知严格只发送一次。
+
+### 八、下一次开发计划
+
+**下一任务：验证正确 Claim Token 的状态确认。**
+
+测试文件：
+
+```text
+test_notification_valid_token.py
+```
+
+测试对象：
+
+```text
+NOTIFICATION_ID = 9
+```
+
+验收标准：
+
+1. 正确 Token 可以完成 `PROCESSING → SENT`。
+2. 成功后清空 `CLAIM_TOKEN`。
+3. 成功后清空 `PROCESSING_STARTED_AT`。
+4. 正确记录 `SENT_AT`。
+5. 相同 Token 再次确认时返回 `False`。
+
+完成后，再进入 `PROCESSING` 超时恢复与旧 Token 失效测试。
+
+---
+
+**截至 2026-10-19，Phase 7 已完成基础重试、重试上限、并发领取及 Claim Token 生成验证；发送确认与异常恢复机制仍在开发中。**
+
+今天可以先停在这里。下一次继续时，从 `test_notification_valid_token.py` 开始即可。
