@@ -313,30 +313,6 @@ def resolve_alert(execution_id, alert_type, reason):
                 )
             )
 
-            # 获取本次 CREATE 审计事件ID
-            event_id = cursor.lastrowid
-
-            print(
-                f"[OUTBOX] 准备创建通知任务: "
-                f"EVENT_ID={event_id}, ALERT_ID={alert_id}"
-            )
-
-            # 在同一事务中创建待发送通知
-            cursor.execute(
-                """
-                INSERT INTO JOB_NOTIFICATION_HISTORY (EVENT_ID,
-                                                      ALERT_ID,
-                                                      NOTIFICATION_TYPE,
-                                                      NOTIFICATION_STATUS)
-                VALUES (%s, %s, 'CONSOLE', 'PENDING')
-                """,
-                (event_id, alert_id)
-            )
-
-            print(
-                f"[OUTBOX] 通知任务插入成功: "
-                f"NOTIFICATION_ID={cursor.lastrowid}"
-            )
 
         # 4. 同一事务提交
         connection.commit()
