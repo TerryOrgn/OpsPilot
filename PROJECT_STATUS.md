@@ -749,7 +749,7 @@ OpsPilot v1 当前已经能够：
 
 今日重点完善 OpsPilot v1 的通知处理模块（Notification Dispatcher），主要围绕以下能力展开：
 
-1. 通知发送失败后的自动重试。
+1. 通知发送失败后的自动重试。Yt
 2. 最大重试次数控制。
 3. MySQL 并发安全任务领取。
 4. Dispatcher 领取任务状态管理。
