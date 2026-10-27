@@ -1,4 +1,9 @@
 from db import get_connection
+from notification_claim import claim_notifications
+from notification_confirmation import (
+    confirm_notification_sent,
+    confirm_notification_failed,
+)
 
 MAX_RETRY_COUNT = 3
 
@@ -111,6 +116,96 @@ def send_console_notification(notification):
         f"ALERT_TYPE={notification['ALERT_TYPE']} "
         f"EVENT={notification['CHANGE_TYPE']}"
     )
+
+
+
+
+def dispatch_claimed_notifications(limit=10, notification_type="CONSOLE"):
+    """
+    Dispatcher V2:
+    Claim -> Send -> Confirm
+    单条通知异常不阻塞其他通知。
+    """
+    notifications = claim_notifications(
+        limit=limit,
+        notification_type=notification_type
+    )
+
+    print(f"[DISPATCHER-V2] CLAIMED={len(notifications)}")
+
+    stats = {
+        "claimed": len(notifications),
+        "sent": 0,
+        "failed": 0,
+        "errors": 0
+    }
+
+    for notification in notifications:
+        notification_id = notification["NOTIFICATION_ID"]
+        claim_token = notification["CLAIM_TOKEN"]
+
+        try:
+            # 阶段一：发送
+            try:
+                send_console_notification(notification)
+
+            except Exception as exc:
+                print(
+                    f"[DISPATCHER-V2] SEND FAILED "
+                    f"ID={notification_id} ERROR={exc}"
+                )
+
+                confirmed = confirm_notification_failed(
+                    notification_id=notification_id,
+                    claim_token=claim_token,
+                    error_message=str(exc)
+                )
+
+                if not confirmed:
+                    raise RuntimeError(
+                        f"FAILED confirmation rejected: ID={notification_id}"
+                    )
+
+                stats["failed"] += 1
+                continue
+
+            # 阶段二：确认成功
+            confirmed = confirm_notification_sent(
+                notification_id=notification_id,
+                claim_token=claim_token
+            )
+
+            if not confirmed:
+                raise RuntimeError(
+                    f"SENT confirmation rejected: ID={notification_id}"
+                )
+
+            stats["sent"] += 1
+
+            print(f"[DISPATCHER-V2] SENT ID={notification_id}")
+
+        except Exception as exc:
+            stats["errors"] += 1
+
+            print(
+                f"[DISPATCHER-V2] PROCESSING ERROR "
+                f"ID={notification_id} ERROR={exc}"
+            )
+
+            # 不修改数据库状态，交给后续恢复机制处理
+            continue
+
+    print(
+        f"[DISPATCHER-V2] SUMMARY "
+        f"CLAIMED={stats['claimed']} "
+        f"SENT={stats['sent']} "
+        f"FAILED={stats['failed']} "
+        f"ERRORS={stats['errors']}"
+    )
+
+    return stats
+
+
 
 if __name__ == "__main__":
     dispatch_pending_notifications()
