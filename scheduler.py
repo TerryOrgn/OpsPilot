@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 
+
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.events import (
     EVENT_JOB_EXECUTED,
@@ -12,7 +13,7 @@ from apscheduler.events import (
 )
 
 from job_monitor import monitor_jobs
-
+from monitor_lock import run_with_monitor_lock
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,7 +55,18 @@ def on_job_event(event):
         )
         print_monitor_status()
 
+
     elif event.code == EVENT_JOB_EXECUTED:
+
+        if event.retval is False:
+            monitor_status["last_run_time"] = now
+
+            logger.warning(
+                "调度任务跳过（MySQL命名锁被占用）: job_id=%s",
+                event.job_id
+            )
+            print_monitor_status()
+            return
 
         monitor_status["last_run_time"] = now
         monitor_status["last_success_time"] = now
@@ -88,7 +100,7 @@ def main():
     scheduler = BlockingScheduler()
 
     scheduler.add_job(
-        func=monitor_jobs,
+        func=scheduled_monitor,
         trigger="interval",
         seconds=60,
         id="opspilot_job_monitor",
@@ -158,6 +170,16 @@ def print_monitor_status():
         logger.info("%s: %s", key, value)
 
     logger.info("==============================================")
+
+def scheduled_monitor():
+    executed = run_with_monitor_lock(monitor_jobs)
+
+    if not executed:
+        logger.warning(
+            "本轮监控因命名锁被占用而跳过"
+        )
+
+    return executed
 
 if __name__ == "__main__":
     main()

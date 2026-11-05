@@ -40,23 +40,37 @@ def auto_resolve_job_alerts(job):
             )
 
     # JOB执行成功
+
+    # JOB执行成功
     elif status == "SUCCESS":
 
         end_time = job["END_TIME"]
         start_time = job["START_TIME"]
 
-        if end_time is None:
+        if end_time is None or start_time is None:
             return
 
         if end_time < start_time:
             return
 
+        # SUCCESS 一定关闭历史失败告警
+        resolved = resolve_alert(
+            execution_id,
+            "JOB_FAILED",
+            "JOB最终状态已更新为SUCCESS，失败告警自动恢复"
+        )
+
+        if resolved:
+            logger.info(
+                "[RESOLVED] %s JOB_FAILED",
+                job_name
+            )
+
         duration = (
             end_time - start_time
         ).total_seconds()
 
-        # 仅当最终耗时符合要求时，
-        # 才允许自动关闭JOB_TIMEOUT。
+        # 只有最终耗时符合阈值，才关闭超时告警
         if 0 <= duration <= MAX_DURATION_SECONDS:
 
             resolved = resolve_alert(
@@ -70,6 +84,7 @@ def auto_resolve_job_alerts(job):
                     "[RESOLVED] %s JOB_TIMEOUT",
                     job_name
                 )
+
 
 
 

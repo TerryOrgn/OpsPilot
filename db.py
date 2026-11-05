@@ -138,12 +138,13 @@ def get_incremental_jobs(
         connection.close()
 
 
+
 def update_checkpoint(
     scan_upper_bound,
     monitor_name="JOB_MONITOR"
 ):
     """
-    本轮JOB处理全部成功后，更新扫描水位。
+    更新扫描水位，禁止水位回退。
     """
 
     sql = """
@@ -154,6 +155,7 @@ def update_checkpoint(
             SCAN_STATUS = 'SUCCESS',
             LAST_ERROR_MESSAGE = NULL
         WHERE MONITOR_NAME = %s
+          AND LAST_SCAN_TIME < %s
     """
 
     connection = get_connection()
@@ -162,12 +164,38 @@ def update_checkpoint(
         with connection.cursor() as cursor:
             cursor.execute(
                 sql,
-                (scan_upper_bound, monitor_name)
+                (
+                    scan_upper_bound,
+                    monitor_name,
+                    scan_upper_bound
+                )
             )
 
-            if cursor.rowcount != 1:
+            if cursor.rowcount == 0:
+                # 区分水位已经更新与监控任务不存在
+                cursor.execute(
+                    """
+                    SELECT LAST_SCAN_TIME
+                    FROM JOB_MONITOR_CHECKPOINT
+                    WHERE MONITOR_NAME = %s
+                    """,
+                    (monitor_name,)
+                )
+
+                current = cursor.fetchone()
+
+                if current is None:
+                    raise RuntimeError(
+                        f"监控水位不存在: {monitor_name}"
+                    )
+
+                if current["LAST_SCAN_TIME"] >= scan_upper_bound:
+                    # 旧扫描结果，不允许覆盖新水位
+                    connection.rollback()
+                    return
+
                 raise RuntimeError(
-                    "更新监控水位失败"
+                    f"更新监控水位失败: {monitor_name}"
                 )
 
         connection.commit()
@@ -178,6 +206,7 @@ def update_checkpoint(
 
     finally:
         connection.close()
+
 
 def get_running_jobs():
 

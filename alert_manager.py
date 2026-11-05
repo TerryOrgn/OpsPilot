@@ -1,8 +1,49 @@
 from datetime import datetime
 from db import get_connection
 
+import time
+import pymysql
+
 
 def save_alert(job, alert_type, alert_level, alert_message):
+    """
+    保存告警。
+    遇到 MySQL 1213 死锁时，有限重试整个事务。
+    """
+    max_attempts = 3
+
+    for attempt in range(max_attempts):
+        try:
+            return _save_alert_once(
+                job,
+                alert_type,
+                alert_level,
+                alert_message
+            )
+
+        except pymysql.err.OperationalError as exc:
+            mysql_error_code = exc.args[0]
+
+            # 仅重试死锁，不吞掉其他数据库错误
+            if mysql_error_code != 1213:
+                raise
+
+            if attempt == max_attempts - 1:
+                raise
+
+            delay = 0.1 * (2 ** attempt)
+
+            print(
+                f"[RETRY] MySQL deadlock 1213, "
+                f"attempt={attempt + 1}/{max_attempts}, "
+                f"delay={delay:.2f}s"
+            )
+
+            time.sleep(delay)
+
+
+
+def _save_alert_once(job, alert_type, alert_level, alert_message):
     """
     保存 JOB 告警。
 
@@ -311,6 +352,21 @@ def resolve_alert(execution_id, alert_type, reason):
                     old_status,
                     reason
                 )
+            )
+
+            # 获取 AUTO_RESOLVE 审计事件 ID
+            event_id = cursor.lastrowid
+
+            # 创建恢复通知任务
+            cursor.execute(
+                """
+                INSERT INTO JOB_NOTIFICATION_HISTORY (EVENT_ID,
+                                                      ALERT_ID,
+                                                      NOTIFICATION_TYPE,
+                                                      NOTIFICATION_STATUS)
+                VALUES (%s, %s, 'CONSOLE', 'PENDING')
+                """,
+                (event_id, alert_id)
             )
 
 

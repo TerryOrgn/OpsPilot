@@ -4,7 +4,7 @@ from pathlib import Path
 
 from audit_dead_letter_recorder import DeadLetterRecorder
 from audit_dead_letter_replay_service import DeadLetterReplayService
-
+from audit_replay_operation_recorder import ReplayOperationRecorder
 
 def check(name, condition):
     assert condition, name
@@ -46,7 +46,15 @@ def main():
             )
 
         retry_service = FakeRetryService()
-        service = DeadLetterReplayService(path, retry_service)
+
+        operation_path = Path(directory) / "replay_operations.jsonl"
+
+        service = DeadLetterReplayService(
+            path,
+            retry_service,
+            operation_recorder=ReplayOperationRecorder(operation_path),
+        )
+
         original_content = path.read_text(encoding="utf-8")
 
         result = service.replay("EVT-001")
