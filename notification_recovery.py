@@ -4,7 +4,9 @@ from db import get_connection
 PROCESSING_TIMEOUT_SECONDS = 300
 MAX_RETRY_COUNT = 3
 
-def recover_stale_notifications(notification_type):
+def recover_stale_notifications(notification_type, notification_id=None, timeout_seconds=PROCESSING_TIMEOUT_SECONDS):
+    if not isinstance(timeout_seconds, int) or timeout_seconds < 1:
+        raise ValueError("timeout_seconds must be positive")
     connection = get_connection()
 
     try:
@@ -12,7 +14,9 @@ def recover_stale_notifications(notification_type):
             cursor.execute(
                 """
                 UPDATE JOB_NOTIFICATION_HISTORY
-                SET NOTIFICATION_STATUS = 'FAILED',
+                SET NOTIFICATION_STATUS = CASE
+                        WHEN RETRY_COUNT + 1 >= %s THEN 'EXHAUSTED'
+                        ELSE 'FAILED' END,
                     RETRY_COUNT = RETRY_COUNT + 1,
                     LAST_ERROR_MESSAGE = 'Processing timeout',
                     CLAIM_TOKEN = NULL,
@@ -25,11 +29,11 @@ def recover_stale_notifications(notification_type):
                           CURRENT_TIMESTAMP(3),
                           INTERVAL %s SECOND
                       )
-                  AND RETRY_COUNT < %s
+                  AND (%s IS NULL OR ID = %s)
                 """,
-                (notification_type,
-                 PROCESSING_TIMEOUT_SECONDS,
-                 MAX_RETRY_COUNT)
+                (MAX_RETRY_COUNT, notification_type,
+                 timeout_seconds,
+                 notification_id, notification_id)
             )
 
             recovered_count = cursor.rowcount
