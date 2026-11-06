@@ -5,12 +5,27 @@
     "api/job_cron.py": {
       "maxDuration": 60,
       "excludeFiles": "{.env*,.venv/**,**/__pycache__/**,test_*.py,docs/**,job_ui_web/**,job_ui*.py,Users/**}"
+    },
+    "api/job_dashboard.py": {
+      "includeFiles": "job_ui_web/**"
     }
   },
   "rewrites": [
     {
       "source": "/api/job-cron",
       "destination": "/api/job_cron"
+    },
+    {
+      "source": "/",
+      "destination": "/api/job_dashboard?view=home"
+    },
+    {
+      "source": "/assets/:path",
+      "destination": "/api/job_dashboard?view=asset&asset=:path"
+    },
+    {
+      "source": "/api/state",
+      "destination": "/api/job_dashboard?view=state"
     }
   ]
 }

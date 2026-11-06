@@ -3,6 +3,7 @@ const jobSelect = document.querySelector('#job');
 const message = document.querySelector('#message');
 const buttons = [...document.querySelectorAll('button[data-action]')];
 let busy = false;
+const cloudDashboard = document.body.dataset.dashboard === 'cloud';
 
 function renderTable(id, rows) {
   const container = document.getElementById(id);
@@ -43,6 +44,13 @@ async function request(path, options) {
 
 async function refresh(preferredJob = jobSelect.value) {
   const state = await request('/api/state');
+  if (cloudDashboard) {
+    for (const section of ['jobs', 'alerts', 'notifications']) {
+      renderTable(section, state[section]);
+    }
+    document.querySelector('#foot').textContent = 'Aiven · 每类展示最近 100 条记录';
+    return;
+  }
   const options = state.jobs.map(job =>
     new Option(job.JOB_NAME + ' · ' + job.STATUS, job.EXECUTION_ID)
   );
@@ -84,4 +92,10 @@ async function runAction(action) {
 for (const button of buttons) {
   button.addEventListener('click', () => runAction(button.dataset.action));
 }
-runAction('refresh');
+if (cloudDashboard) {
+  refresh().catch(error => {
+    document.querySelector('#foot').textContent = error.message;
+  });
+} else {
+  runAction('refresh');
+}

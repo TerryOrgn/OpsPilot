@@ -1,4 +1,5 @@
 import os
+import ssl
 import pymysql
 
 from dotenv import load_dotenv
@@ -16,7 +17,11 @@ def get_connection():
         raise RuntimeError("Configured database does not match expected database")
     tls_options = {}
     if os.getenv("OPSPILOT_MYSQL_TLS") == "1":
-        tls_options = {"ssl_verify_cert": True, "ssl_verify_identity": True}
+        ca_pem = os.getenv("OPSPILOT_MYSQL_CA_PEM")
+        if ca_pem:
+            tls_options = {"ssl": ssl.create_default_context(cadata=ca_pem)}
+        else:
+            tls_options = {"ssl_verify_cert": True, "ssl_verify_identity": True}
 
     connection = pymysql.connect(
         host=os.getenv("MYSQL_HOST", "127.0.0.1"),
