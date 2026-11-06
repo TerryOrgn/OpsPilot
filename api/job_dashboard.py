@@ -74,7 +74,14 @@ class handler(BaseHTTPRequestHandler):
             try:
                 return self.reply(200, dashboard_state())
             except Exception as exc:
-                logging.error("Dashboard read failed type=%s", type(exc).__name__)
+                code = exc.args[0] if exc.args and type(exc.args[0]) is int else None
+                cause = getattr(exc, "original_exception", None) or exc.__cause__ or exc.__context__
+                logging.error(
+                    "Dashboard read failed type=%s code=%s cause=%s",
+                    type(exc).__name__,
+                    code,
+                    type(cause).__name__ if cause else None,
+                )
                 return self.reply(503, {"error": "暂时无法读取测试库，请检查云端连接配置"})
         if path in ASSETS:
             name, content_type = ASSETS[path]
