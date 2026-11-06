@@ -5,21 +5,44 @@ from dotenv import load_dotenv
 from datetime import timedelta
 
 
-load_dotenv()
+if not os.getenv("VERCEL"):
+    load_dotenv()
 
 
 def get_connection():
-    return pymysql.connect(
+    expected = os.getenv("OPSPILOT_EXPECTED_DATABASE")
+    database = os.getenv("MYSQL_DATABASE", "opspilot")
+    if expected and database != expected:
+        raise RuntimeError("Configured database does not match expected database")
+    tls_options = {}
+    if os.getenv("OPSPILOT_MYSQL_TLS") == "1":
+        tls_options = {"ssl_verify_cert": True, "ssl_verify_identity": True}
+
+    connection = pymysql.connect(
         host=os.getenv("MYSQL_HOST", "127.0.0.1"),
         port=int(os.getenv("MYSQL_PORT", "3306")),
         user=os.environ["MYSQL_USER"],
         password=os.environ["MYSQL_PASSWORD"],
-        database=os.getenv("MYSQL_DATABASE", "opspilot"),
+        database=database,
         charset="utf8mb4",
         connect_timeout=5,
         read_timeout=10,
-        cursorclass=pymysql.cursors.DictCursor
+        write_timeout=10,
+        cursorclass=pymysql.cursors.DictCursor,
+        **tls_options
     )
+
+    if expected:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT DATABASE() AS db")
+                if cursor.fetchone()["db"] != expected:
+                    raise RuntimeError("Connected database does not match expected database")
+            connection.rollback()
+        except Exception:
+            connection.close()
+            raise
+    return connection
 
 
 def get_job_executions():

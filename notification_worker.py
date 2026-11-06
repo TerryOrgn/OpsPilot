@@ -5,7 +5,7 @@ from db import get_connection
 
 MAX_RETRIES = 3
 
-def claim_notification(notification_id=None, error_message=None):
+def claim_notification(notification_id=None):
     """
     原子领取一条待发送通知。
 
@@ -40,10 +40,12 @@ def claim_notification(notification_id=None, error_message=None):
                     SELECT ID, EVENT_ID, ALERT_ID, NOTIFICATION_TYPE
                     FROM JOB_NOTIFICATION_HISTORY
                     WHERE ID = %s
-                      AND NOTIFICATION_STATUS = 'PENDING'
+                      AND (NOTIFICATION_STATUS = 'PENDING'
+                           OR (NOTIFICATION_STATUS = 'FAILED'
+                               AND RETRY_COUNT < %s))
                         FOR UPDATE SKIP LOCKED
                     """,
-                    (notification_id,)
+                    (notification_id, MAX_RETRIES)
                 )
 
             notification = cursor.fetchone()
@@ -57,23 +59,15 @@ def claim_notification(notification_id=None, error_message=None):
             cursor.execute(
                 """
                 UPDATE JOB_NOTIFICATION_HISTORY
-                SET NOTIFICATION_STATUS   = CASE
-                    WHEN RETRY_COUNT + 1 >= 3 THEN 'EXHAUSTED'
-                    ELSE 'FAILED'
-                    END,
-                    RETRY_COUNT           = RETRY_COUNT + 1,
-                    LAST_ERROR_MESSAGE    = %s,
-                    CLAIM_TOKEN           = NULL,
-                    PROCESSING_STARTED_AT = NULL
+                SET NOTIFICATION_STATUS = 'PROCESSING',
+                    CLAIM_TOKEN = %s,
+                    PROCESSING_STARTED_AT = NOW(3)
                 WHERE ID = %s
-                  AND NOTIFICATION_STATUS = 'PROCESSING'
-                  AND CLAIM_TOKEN = %s
+                  AND (NOTIFICATION_STATUS = 'PENDING'
+                       OR (NOTIFICATION_STATUS = 'FAILED'
+                           AND RETRY_COUNT < %s))
                 """,
-                (
-                    (error_message or "Unknown error")[:1000],
-                    notification_id,
-                    claim_token,
-                ),
+                (claim_token, notification["ID"], MAX_RETRIES),
             )
 
             if cursor.rowcount != 1:
@@ -140,7 +134,6 @@ def complete_notification(
                             WHEN RETRY_COUNT + 1 >= 3 THEN 'EXHAUSTED'
                             ELSE 'FAILED'
                         END,
-                        RETRY_COUNT = RETRY_COUNT + 1,
                         RETRY_COUNT = RETRY_COUNT + 1,
                         LAST_ERROR_MESSAGE = %s,
                         CLAIM_TOKEN = NULL,

@@ -1,5 +1,7 @@
 import logging
 import time
+import signal
+from job_runtime import RuntimeConfig, run_notification_batch, configure_logging
 from datetime import datetime
 
 
@@ -35,6 +37,10 @@ monitor_status = {
 }
 
 def on_job_event(event):
+
+    if event.job_id == "opspilot_notifications":
+        logger.info("notification_scheduler_event code=%s", event.code)
+        return
 
     now = datetime.now()
 
@@ -95,41 +101,39 @@ def on_job_event(event):
             event.job_id
         )
 
+def build_scheduler(config=None):
+    config = config or RuntimeConfig.from_env()
+    service = BlockingScheduler()
+    for func, seconds, job_id in (
+        (scheduled_monitor, config.monitor_seconds, "opspilot_job_monitor"),
+        (run_notification_batch, config.notification_seconds, "opspilot_notifications"),
+    ):
+        service.add_job(func, trigger="interval", seconds=seconds, id=job_id,
+                        max_instances=1, coalesce=True, misfire_grace_time=30,
+                        replace_existing=True)
+    service.add_listener(on_job_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR
+                         | EVENT_JOB_MAX_INSTANCES | EVENT_JOB_MISSED)
+    return service
+
+
 def main():
-
-    scheduler = BlockingScheduler()
-
-    scheduler.add_job(
-        func=scheduled_monitor,
-        trigger="interval",
-        seconds=60,
-        id="opspilot_job_monitor",
-        name="OpsPilot JOB Monitor",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=30,
-        replace_existing=True
-    )
-
-    scheduler.add_listener(
-        on_job_event,
-        EVENT_JOB_EXECUTED
-        | EVENT_JOB_ERROR
-        | EVENT_JOB_MAX_INSTANCES
-        | EVENT_JOB_MISSED
-    )
-
-    # logger.info("防重入测试启动")
-    # logger.info("调度间隔: 5秒，模拟执行耗时: 10秒")
-    logger.info("OpsPilot JOB监控服务启动")
-    logger.info("监控间隔: 60秒")
-
+    config = RuntimeConfig.from_env()
+    configure_logging(config.log_level)
+    service = build_scheduler(config)
+    def stop(signum, frame):
+        if service.running:
+            service.shutdown(wait=True)
+    previous = signal.signal(signal.SIGTERM, stop)
+    logger.info("JOB service starting monitor_seconds=%s notification_seconds=%s batch=%s",
+                config.monitor_seconds, config.notification_seconds, config.batch)
     try:
-        scheduler.start()
-
+        service.start()
     except (KeyboardInterrupt, SystemExit):
-
-        logger.info("OpsPilot调度服务停止")
+        if service.running:
+            service.shutdown(wait=True)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+        logger.info("JOB service stopped")
 
 
 def test_long_running_monitor():
@@ -182,4 +186,11 @@ def scheduled_monitor():
     return executed
 
 if __name__ == "__main__":
+    from job_preflight import check_readiness
+
+    try:
+        check_readiness()
+    except Exception as exc:
+        detail = str(exc) if type(exc) is RuntimeError else type(exc).__name__
+        raise SystemExit(f"JOB preflight failed: {detail}") from None
     main()

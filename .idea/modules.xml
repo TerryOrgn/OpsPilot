@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/OpsPilot.iml" filepath="$PROJECT_DIR$/.idea/OpsPilot.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/opspilot-jobmonitor.iml" filepath="$PROJECT_DIR$/.idea/opspilot-jobmonitor.iml" />
     </modules>
   </component>
 </project>
