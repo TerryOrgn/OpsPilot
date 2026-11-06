@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/job_cron.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{.env*,.venv/**,**/__pycache__/**,test_*.py,docs/**,job_ui_web/**,job_ui*.py,Users/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/job-cron",
+      "destination": "/api/job_cron"
+    }
+  ]
+}
