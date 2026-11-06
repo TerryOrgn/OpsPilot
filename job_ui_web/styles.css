@@ -1,0 +1,25 @@
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f8;color:#17243c;font:15px system-ui}
+main{max-width:1200px;margin:auto;padding:38px 24px}
+header{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:32px;margin:8px 0}
+.sub{color:#617087;line-height:1.7}
+.badge{background:#dcefe5;color:#16714a;border-radius:30px;padding:10px 16px}
+section{background:white;border:1px solid #dde4ee;border-radius:14px;padding:22px;margin-top:22px}
+h2{font-size:18px;margin-top:0}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+button,select{font:inherit;padding:11px 15px;border-radius:8px;border:1px solid #c8d3e2;background:white;color:#203557;cursor:pointer}
+button:first-child{background:#265de6;color:white;border-color:#265de6}
+button:hover{filter:brightness(.96)}
+button:disabled{opacity:.5}
+select{width:100%;margin:14px 0}
+table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+td,th{padding:12px 8px;border-bottom:1px solid #edf0f5;word-break:break-word}
+th{color:#68788e}
+#message{padding:12px 0;color:#2353a1;min-height:46px}
+.tables{overflow:auto}
+.empty{padding:20px;color:#7b8798}
+footer{margin-top:24px;color:#718096;font-size:12px}
+ @media(max-width:600px){header{display:block}
+main{padding:20px 12px}
+}

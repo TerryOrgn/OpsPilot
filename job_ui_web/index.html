@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta name="csrf-token" content="__CSRF__">
+<script src="/assets/app.js" defer>
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpsPilot · 本地验收台</title>
+<link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+<main>
+<header>
+<div>
+<div class="sub">OPSPILOT / JOB MONITOR V1</div>
+<h1>JOB 监控验收台</h1>
+<div class="sub">创建任务 → 检测告警 → 发送通知 → 恢复验证</div>
+</div>
+<span class="badge">● 本地测试库 · opspilot_test</span>
+</header>
+<section>
+<h2>验证工作台</h2>
+<p class="sub">仅展示和操作本次 UI 会话创建的数据。默认监控水位与已有历史数据不受影响。</p>
+<button data-action="create">＋ 创建失败 JOB</button>
+<label for="job">
+<p>当前验证任务</p>
+</label>
+<select id="job">
+<option value="">先创建一个测试 JOB</option>
+</select>
+<div class="actions">
+<button data-action="monitor">运行监控</button>
+<button data-action="send">发送通知</button>
+<button data-action="success">标记成功</button>
+<button data-action="fail">再次失败</button>
+<button data-action="crash">模拟崩溃回收</button>
+<button data-action="exhaust">模拟三次失败</button>
+<button data-action="refresh">刷新状态</button>
+</div>
+<div id="message" role="status" aria-live="polite">建议：创建失败 JOB → 运行监控 → 发送通知 → 标记成功 → 运行监控 → 发送通知</div>
+</section>
+<section>
+<h2>任务执行</h2>
+<div id="jobs" class="tables">
+</div>
+</section>
+<section>
+<h2>告警生命周期</h2>
+<div id="alerts" class="tables">
+</div>
+</section>
+<section>
+<h2>通知与重试</h2>
+<div id="notifications" class="tables">
+</div>
+</section>
+<footer id="foot">
+</footer>
+</main>
+</body>
+</html>
