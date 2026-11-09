@@ -10,24 +10,24 @@ if not os.getenv("VERCEL"):
     load_dotenv()
 
 
-def get_connection():
-    expected = os.getenv("OPSPILOT_EXPECTED_DATABASE")
-    database = os.getenv("MYSQL_DATABASE", "opspilot")
+def get_connection(*, env_prefix=""):
+    expected = os.getenv(env_prefix + "OPSPILOT_EXPECTED_DATABASE")
+    database = os.getenv(env_prefix + "MYSQL_DATABASE", "opspilot")
     if expected and database != expected:
         raise RuntimeError("Configured database does not match expected database")
     tls_options = {}
-    if os.getenv("OPSPILOT_MYSQL_TLS") == "1":
-        ca_pem = os.getenv("OPSPILOT_MYSQL_CA_PEM")
+    if os.getenv(env_prefix + "OPSPILOT_MYSQL_TLS") == "1":
+        ca_pem = os.getenv(env_prefix + "OPSPILOT_MYSQL_CA_PEM")
         if ca_pem:
             tls_options = {"ssl": ssl.create_default_context(cadata=ca_pem)}
         else:
             tls_options = {"ssl_verify_cert": True, "ssl_verify_identity": True}
 
     connection = pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.environ["MYSQL_USER"],
-        password=os.environ["MYSQL_PASSWORD"],
+        host=os.getenv(env_prefix + "MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv(env_prefix + "MYSQL_PORT", "3306")),
+        user=os.environ[env_prefix + "MYSQL_USER"],
+        password=os.environ[env_prefix + "MYSQL_PASSWORD"],
         database=database,
         charset="utf8mb4",
         connect_timeout=5,

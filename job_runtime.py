@@ -72,7 +72,7 @@ def run_notification_batch(config=None, notification_id=None):
     # Snapshot IDs first: a failed task can be attempted only once in this cycle.
     for task_id in pending_ids(config, notification_id):
         try:
-            if send_console_notification(task_id):
+            if send_console_notification(task_id, retry_seconds=config.retry_seconds):
                 result['sent'] += 1
             else:
                 result['skipped'] += 1

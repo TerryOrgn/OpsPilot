@@ -20,13 +20,17 @@ ASSETS = {
 
 
 def dashboard_state():
+    # Keep existing test deployments working while allowing a separate read-only account.
+    prefix = "DASHBOARD_" if any(key.startswith("DASHBOARD_MYSQL_") for key in os.environ) else ""
     if (
-        os.getenv("MYSQL_DATABASE") != "opspilot_test"
-        or os.getenv("OPSPILOT_EXPECTED_DATABASE") != "opspilot_test"
-        or os.getenv("OPSPILOT_MYSQL_TLS") != "1"
+        os.getenv(prefix + "MYSQL_DATABASE") != "opspilot_test"
+        or os.getenv(prefix + "OPSPILOT_EXPECTED_DATABASE") != "opspilot_test"
+        or os.getenv(prefix + "OPSPILOT_MYSQL_TLS") != "1"
     ):
         raise RuntimeError("Dashboard requires a verified TLS connection to opspilot_test")
-    connection = db.get_connection()
+    if prefix and not os.getenv(prefix + "MYSQL_HOST"):
+        raise RuntimeError("Dashboard requires an explicit database host")
+    connection = db.get_connection(env_prefix=prefix)
     try:
         with connection.cursor() as cursor:
             result = {}

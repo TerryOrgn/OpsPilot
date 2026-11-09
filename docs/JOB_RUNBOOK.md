@@ -63,3 +63,7 @@ SIGTERM 和 Ctrl+C 等待正在执行的任务结束。先停止服务，再更�
 ## 验收覆盖与限制
 
 run_job_acceptance.py：运行配置、日志脱敏、SIGTERM、双任务注册、批次失败隔离、数据库目标保护，以及 9、10C–10F、12A。12A 是真实 MySQL monitor→告警→通知→恢复，扫描输入限定本次 JOB，不启动持续生产调度。没有执行企业生产上线、远端部署或邮件/Webhook 验收。
+
+## 初始化新环境
+
+维护账号先选择经过核对的空库，通过 `SELECT DATABASE()` 确认目标，再执行 [JOB v1 schema 基线](../migrations/001_job_monitor.sql)。集成测试目标只能是 opspilot_test。已有库按变更评审后的增量迁移升级。初始化默认 JOB_MONITOR 水位前须确认从哪个时间开始扫描，避免重放历史或跳过待处理记录。

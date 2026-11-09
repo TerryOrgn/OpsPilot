@@ -28,3 +28,9 @@
 4. 如需停用，先在 Vercel 控制台关闭 Cron，或更新禁用开关并重新部署。回滚部署时另行核对活跃的 Cron 配置。保留当前数据库水位。
 
 Vercel 原生 Cron 在失败后不会补跑同一次请求。下次触发由应用按已有水位和通知状态继续处理。CONSOLE 输出在函数日志中。
+
+## 只读看板与执行器
+
+首页 `/` 提供密码保护的只读看板。Production 设置 `OPSPILOT_DASHBOARD_PASSWORD`，浏览器登录用户名为 `opspilot`。配置更新后重新部署。看板账号仅需三张表的 SELECT 权限，分别是 JOB_EXECUTION_LOG、JOB_ALERT_HISTORY、JOB_NOTIFICATION_HISTORY。
+
+现有演示部署可继续使用 MYSQL_*。同时部署生产执行器时，为看板使用完整的独立配置：DASHBOARD_MYSQL_HOST、DASHBOARD_MYSQL_PORT、DASHBOARD_MYSQL_USER、DASHBOARD_MYSQL_PASSWORD、DASHBOARD_MYSQL_DATABASE、DASHBOARD_OPSPILOT_EXPECTED_DATABASE、DASHBOARD_OPSPILOT_MYSQL_TLS。看板的两个库名都填 opspilot_test，TLS 填 1。自定义 CA 填 DASHBOARD_OPSPILOT_MYSQL_CA_PEM，沿用旧配置时填 OPSPILOT_MYSQL_CA_PEM。执行器继续使用自己的 MYSQL_* 和 OPSPILOT_*。上线前先分别验证看板读取和执行器的隔离验收。
