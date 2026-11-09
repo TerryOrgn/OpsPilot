@@ -22,8 +22,8 @@
 
 ## 验收与上线
 
-1. 建立 Preview，先保持执行禁用。此阶段无需配置数据库，可核对入口与鉴权。准备云端测试库后，在 Preview 配置独立 `opspilot_test`，启用执行，再通过带 Bearer 凭证的手工 GET 验收。
-2. 验证未授权请求返回 401，禁用时返回 503，启用后正确处理测试数据。检查重叠请求跳过以及日志中的耗时，确认代表性扫描在 60 秒限制内。部署前应估算积压，避免一次扫描超过函数时限。
+1. 建立 Preview，先保持执行禁用。此阶段无需配置数据库，可核对入口与鉴权。按下文准备独立 fixture，再仅对该 Preview 分支启用手工调用。
+2. 验证未授权请求返回 401，禁用或隔离配置缺失时返回 503。启用后验证只扫描指定测试 JOB、只处理该 JOB 的通知并推进独立 checkpoint。检查重叠请求跳过，确认代表性扫描在 60 秒限制内。
 3. 准备正式运行时，先确认计划符合用途。若选用 Pro 或 Enterprise 的分钟调度，在 vercel.json 加入 `"crons": [{"path": "/api/job-cron", "schedule": "* * * * *"}]`。Production 保持禁用，确认数据库连通性、TLS、最小权限和水位后再启用。
 4. 如需停用，先在 Vercel 控制台关闭 Cron，或更新禁用开关并重新部署。回滚部署时另行核对活跃的 Cron 配置。保留当前数据库水位。
 
@@ -34,3 +34,30 @@ Vercel 原生 Cron 在失败后不会补跑同一次请求。下次触发由应�
 首页 `/` 提供密码保护的只读看板。Production 设置 `OPSPILOT_DASHBOARD_PASSWORD`，浏览器登录用户名为 `opspilot`。配置更新后重新部署。看板账号仅需三张表的 SELECT 权限，分别是 JOB_EXECUTION_LOG、JOB_ALERT_HISTORY、JOB_NOTIFICATION_HISTORY。
 
 现有演示部署可继续使用 MYSQL_*。同时部署生产执行器时，为看板使用完整的独立配置：DASHBOARD_MYSQL_HOST、DASHBOARD_MYSQL_PORT、DASHBOARD_MYSQL_USER、DASHBOARD_MYSQL_PASSWORD、DASHBOARD_MYSQL_DATABASE、DASHBOARD_OPSPILOT_EXPECTED_DATABASE、DASHBOARD_OPSPILOT_MYSQL_TLS。看板的两个库名都填 opspilot_test，TLS 填 1。自定义 CA 填 DASHBOARD_OPSPILOT_MYSQL_CA_PEM，沿用旧配置时填 OPSPILOT_MYSQL_CA_PEM。执行器继续使用自己的 MYSQL_* 和 OPSPILOT_*。上线前先分别验证看板读取和执行器的隔离验收。
+
+## Preview 后台隔离验收
+
+在 Aiven 的测试库连接中先执行 `SELECT DATABASE()`。只有结果为 `opspilot_test` 时才继续。在同一会话准备一次性 JOB 和同名 checkpoint：
+
+```sql
+SET @fixture = CONCAT('PREVIEW_', LEFT(REPLACE(UUID(), '-', ''), 20));
+START TRANSACTION;
+INSERT INTO JOB_EXECUTION_LOG
+    (EXECUTION_ID, SYSTEM_ID, JOB_NAME, BUSINESS_DATE, START_TIME, END_TIME, STATUS, ERROR_MESSAGE)
+VALUES
+    (@fixture, 'PREVIEW_TEST', 'Preview 验收任务', CURRENT_DATE(), NOW(3), NOW(3), 'FAILED', 'Preview fixture');
+INSERT INTO JOB_MONITOR_CHECKPOINT (MONITOR_NAME, LAST_SCAN_TIME, SCAN_STATUS)
+VALUES (@fixture, NOW(3), 'SUCCESS');
+COMMIT;
+SELECT @fixture AS preview_execution_id;
+```
+
+在 Vercel 将以下设置限定到用于验收的 Preview 分支：
+
+- MYSQL_HOST、MYSQL_PORT、MYSQL_USER、MYSQL_PASSWORD 使用 Aiven 测试库执行账号。权限参考运行手册，线上看板账号只用于查询。
+- MYSQL_DATABASE 和 OPSPILOT_EXPECTED_DATABASE 均为 opspilot_test，OPSPILOT_MYSQL_TLS 为 1。需要自定义 CA 时填 OPSPILOT_MYSQL_CA_PEM。
+- OPSPILOT_PREVIEW_EXECUTION_ID 填写查询返回的 ID。配置独立的 CRON_SECRET。确认 fixture 已创建后，将 OPSPILOT_CRON_ENABLED 设为 1 并重新部署该 Preview。
+
+通过带 Bearer 凭据的 GET 调用 Preview 的 /api/job-cron。若 Preview 还启用了 Vercel 部署保护，先通过项目授权的方式访问部署。日志和响应只用于验收当前 fixture。每次最多处理该 JOB 的 10 条到期 CONSOLE 通知，进程锁竞争时返回 skipped。
+
+检查本次 JOB 的失败告警及通知，然后在同一测试库将这条 fixture 标记为 SUCCESS，再调用一轮验证告警恢复和恢复通知。重试和超时回收用同一 fixture 的通知记录另行构造，避免修改共享队列。验收前后核对默认 JOB_MONITOR 水位和现有历史记录。验收后将该 Preview 的启用开关设为 0 并重新部署。

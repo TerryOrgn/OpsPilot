@@ -18,7 +18,7 @@ REQUIRED_COLUMNS = {
 }
 
 
-def check_readiness(config=None):
+def check_readiness(config=None, *, checkpoint_name="JOB_MONITOR"):
     target = os.getenv("MYSQL_DATABASE")
     expected = os.getenv("OPSPILOT_EXPECTED_DATABASE")
     if not target or target != expected:
@@ -34,11 +34,11 @@ def check_readiness(config=None):
                 cursor.execute(f"SELECT {columns} FROM {table} LIMIT 0")
             cursor.execute(
                 "SELECT LAST_SCAN_TIME FROM JOB_MONITOR_CHECKPOINT WHERE MONITOR_NAME = %s",
-                ("JOB_MONITOR",),
+                (checkpoint_name,),
             )
             checkpoint = cursor.fetchone()
             if checkpoint is None or checkpoint["LAST_SCAN_TIME"] is None:
-                raise RuntimeError("JOB_MONITOR checkpoint missing or uninitialized")
+                raise RuntimeError("Monitor checkpoint missing or uninitialized")
         return target
     finally:
         connection.close()

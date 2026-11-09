@@ -108,7 +108,9 @@ def get_checkpoint(monitor_name="JOB_MONITOR"):
 
 def get_incremental_jobs(
     last_scan_time,
-    overlap_minutes=5
+    overlap_minutes=5,
+    *,
+    execution_id=None,
 ):
     """
     查询上次水位之后新增或更新的JOB。
@@ -150,12 +152,13 @@ def get_incremental_jobs(
                 FROM JOB_EXECUTION_LOG
                 WHERE UPDATED_AT >= %s
                   AND UPDATED_AT <= %s
+                  AND (%s IS NULL OR EXECUTION_ID = %s)
                 ORDER BY UPDATED_AT, ID
             """
 
             cursor.execute(
                 sql,
-                (scan_start, scan_upper_bound)
+                (scan_start, scan_upper_bound, execution_id, execution_id)
             )
 
             jobs = cursor.fetchall()
