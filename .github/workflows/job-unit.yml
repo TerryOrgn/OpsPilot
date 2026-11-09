@@ -1,0 +1,19 @@
+name: JOB unit tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL: '1'
+      MYSQL_DATABASE: opspilot_test
+      OPSPILOT_EXPECTED_DATABASE: opspilot_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: test -z "$(git ls-files -- .env '**/.env')"
+      - run: python -m pip install -r requirements-job.txt
+      - run: python -m unittest test_job_runtime test_job_cron test_job_ui
