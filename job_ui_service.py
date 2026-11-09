@@ -1,7 +1,6 @@
 """Operations scoped to this acceptance session."""
 import os
 import uuid
-from unittest.mock import patch
 import db
 import job_monitor
 from job_runtime import RuntimeConfig, run_notification_batch
@@ -40,13 +39,7 @@ def action(name, execution_id=''):
         query('UPDATE JOB_EXECUTION_LOG SET STATUS=%s,END_TIME=NOW(3) WHERE EXECUTION_ID=%s', ('SUCCESS' if name == 'success' else 'FAILED', execution_id))
         return {'message': '状态已更新；点击运行监控'}
     if name == 'monitor':
-        original = db.get_incremental_jobs
-
-        def scoped(*args, **kwargs):
-            rows, bound = original(*args, **kwargs)
-            return ([r for r in rows if r['EXECUTION_ID'] == execution_id], bound)
-        with patch.object(job_monitor, 'get_checkpoint', side_effect=lambda: db.get_checkpoint(checkpoint)), patch.object(job_monitor, 'update_checkpoint', side_effect=lambda bound: db.update_checkpoint(bound, checkpoint)), patch.object(job_monitor, 'get_incremental_jobs', side_effect=scoped), patch.object(job_monitor, 'get_running_jobs', return_value=[db.get_job_by_execution_id(execution_id)]):
-            job_monitor.monitor_jobs()
+        job_monitor.monitor_jobs(checkpoint_name=checkpoint, execution_id=execution_id)
         return {'message': '监控完成：已执行告警检测、去重与自动恢复'}
     rows = query("SELECT n.ID FROM JOB_NOTIFICATION_HISTORY n JOIN JOB_ALERT_HISTORY a ON a.ID=n.ALERT_ID WHERE a.EXECUTION_ID=%s AND n.NOTIFICATION_STATUS IN ('PENDING','FAILED','PROCESSING') ORDER BY n.ID", (execution_id,), True)
     if not rows:

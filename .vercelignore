@@ -7,3 +7,6 @@ Users/
 test_*.py
 job_ui.py
 job_ui_service.py
+docs/
+migrations/
+.github/

@@ -191,13 +191,15 @@ def detect_job_alert(job):
     }
 
 
-def monitor_jobs():
+def monitor_jobs(*, checkpoint_name=None, execution_id=None):
+    if execution_id is not None and (not checkpoint_name or checkpoint_name == "JOB_MONITOR"):
+        raise ValueError("A scoped scan requires an independent checkpoint")
     try:
         # 执行JOB监控
         print("\n========== OpsPilot Incremental JOB Monitor ==========")
 
         # 1. 读取Checkpoint
-        checkpoint = get_checkpoint()
+        checkpoint = get_checkpoint(checkpoint_name) if checkpoint_name else get_checkpoint()
 
         last_scan_time = checkpoint["LAST_SCAN_TIME"]
 
@@ -210,7 +212,14 @@ def monitor_jobs():
             overlap_minutes=5
         )
 
-        running_jobs = get_running_jobs()
+        if execution_id is None:
+            running_jobs = get_running_jobs()
+        else:
+            incremental_jobs = [
+                job for job in incremental_jobs if job["EXECUTION_ID"] == execution_id
+            ]
+            selected_job = get_job_by_execution_id(execution_id)
+            running_jobs = [selected_job] if selected_job else []
 
         # 使用 EXECUTION_ID 合并去重
         # 先放入 RUNNING JOB
@@ -297,7 +306,10 @@ def monitor_jobs():
             auto_resolve_job_alerts(job)
 
         # 5. 所有JOB处理成功后，推进Checkpoint
-        update_checkpoint(scan_upper_bound)
+        if checkpoint_name:
+            update_checkpoint(scan_upper_bound, checkpoint_name)
+        else:
+            update_checkpoint(scan_upper_bound)
 
         print(
             f"[CHECKPOINT] 水位已更新: {scan_upper_bound}"

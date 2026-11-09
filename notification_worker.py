@@ -5,7 +5,7 @@ from db import get_connection
 
 MAX_RETRIES = 3
 
-def claim_notification(notification_id=None):
+def claim_notification(notification_id=None, *, retry_seconds=0):
     """
     原子领取一条待发送通知。
 
@@ -17,36 +17,20 @@ def claim_notification(notification_id=None):
 
     try:
         with connection.cursor() as cursor:
-            if notification_id is None:
-                cursor.execute(
-                    """
-                    SELECT ID, EVENT_ID, ALERT_ID, NOTIFICATION_TYPE
-                    FROM JOB_NOTIFICATION_HISTORY
-                    WHERE (
-                        NOTIFICATION_STATUS = 'PENDING'
-                        OR (
-                            NOTIFICATION_STATUS = 'FAILED'
-                            AND RETRY_COUNT < 3
-                        )
-                    )
-                    ORDER BY CREATED_AT, ID LIMIT 1
-                       FOR
-                    UPDATE SKIP LOCKED
-                    """
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT ID, EVENT_ID, ALERT_ID, NOTIFICATION_TYPE
-                    FROM JOB_NOTIFICATION_HISTORY
-                    WHERE ID = %s
-                      AND (NOTIFICATION_STATUS = 'PENDING'
-                           OR (NOTIFICATION_STATUS = 'FAILED'
-                               AND RETRY_COUNT < %s))
-                        FOR UPDATE SKIP LOCKED
-                    """,
-                    (notification_id, MAX_RETRIES)
-                )
+            cursor.execute(
+                """
+                SELECT ID, EVENT_ID, ALERT_ID, NOTIFICATION_TYPE
+                FROM JOB_NOTIFICATION_HISTORY
+                WHERE (%s IS NULL OR ID = %s)
+                  AND (NOTIFICATION_STATUS = 'PENDING'
+                       OR (NOTIFICATION_STATUS = 'FAILED'
+                           AND RETRY_COUNT < %s
+                           AND (%s = 0 OR UPDATED_AT <= DATE_SUB(NOW(3), INTERVAL %s SECOND))))
+                ORDER BY CREATED_AT, ID LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """,
+                (notification_id, notification_id, MAX_RETRIES, retry_seconds, retry_seconds),
+            )
 
             notification = cursor.fetchone()
 
@@ -163,7 +147,7 @@ def complete_notification(
 
 
 
-def send_console_notification(notification_id=None):
+def send_console_notification(notification_id=None, *, retry_seconds=0):
     """
     领取并发送一条 CONSOLE 通知。
 
@@ -173,7 +157,7 @@ def send_console_notification(notification_id=None):
 
     发送异常会记录 FAILED 并重新抛出。
     """
-    task = claim_notification(notification_id)
+    task = claim_notification(notification_id, retry_seconds=retry_seconds)
 
     if task is None:
         return False

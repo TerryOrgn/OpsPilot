@@ -28,6 +28,17 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(send.call_count,2)
         self.assertEqual(result['failed'],1)
         self.assertEqual(result['sent'],1)
+    def test_stale_candidate_preserves_retry_cooldown_when_claimed(self):
+        with (
+            patch('job_runtime.recover_stale_notifications', return_value=0),
+            patch('job_runtime.pending_ids', return_value=[7]),
+            patch('job_runtime.backlog', return_value={'FAILED': 1}),
+            patch('notification_worker.claim_notification', return_value=None) as claim,
+        ):
+            result = run_notification_batch(RuntimeConfig(retry_seconds=120))
+        claim.assert_called_once_with(7, retry_seconds=120)
+        self.assertEqual(result['skipped'], 1)
+
     def test_both_jobs_registered(self):
         service=scheduler.build_scheduler(RuntimeConfig())
         self.assertEqual({j.id for j in service.get_jobs()},{'opspilot_job_monitor','opspilot_notifications'})
