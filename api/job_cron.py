@@ -110,6 +110,11 @@ class handler(BaseHTTPRequestHandler):
         try:
             result = run_cycle()
         except Exception as exc:
-            logging.error("job_cron_failed error_type=%s", type(exc).__name__)
+            code = exc.args[0] if exc.args and type(exc.args[0]) is int else None
+            cause = getattr(exc, "original_exception", None) or exc.__cause__ or exc.__context__
+            logging.error(
+                "job_cron_failed error_type=%s code=%s cause=%s",
+                type(exc).__name__, code, type(cause).__name__ if cause else None,
+            )
             return self.reply(500, {"status": "failed"})
         return self.reply(200, result)
