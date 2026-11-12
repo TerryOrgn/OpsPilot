@@ -1,6 +1,6 @@
 # JOB 监控的 Vercel 部署
 
-通过受保护的 `GET /api/job-cron` 手动触发。当前 Hobby 配置不注册自动调度。Python Function 执行一轮监控及 CONSOLE 通知，复用原有的 checkpoint、命名锁和通知事务。现有的本地验收 UI 继续在 Mac 上运行。Vercel 项目只部署后台入口。
+通过受保护的 `GET /api/job-cron` 手动触发。正式部署注册每日一次的巡检。Python Function 执行一轮监控及 CONSOLE 通知，复用原有的 checkpoint、命名锁和通知事务。现有的本地验收 UI 继续在 Mac 上运行。Vercel 项目只部署后台入口。
 
 ## 部署前
 
@@ -24,7 +24,7 @@
 
 1. 建立 Preview，先保持执行禁用。此阶段无需配置数据库，可核对入口与鉴权。按下文准备独立 fixture，再仅对该 Preview 分支启用手工调用。
 2. 验证未授权请求返回 401，禁用或隔离配置缺失时返回 503。启用后验证只扫描指定测试 JOB、只处理该 JOB 的通知并推进独立 checkpoint。检查重叠请求跳过，确认代表性扫描在 60 秒限制内。
-3. 准备正式运行时，先确认计划符合用途。若选用 Pro 或 Enterprise 的分钟调度，在 vercel.json 加入 `"crons": [{"path": "/api/job-cron", "schedule": "* * * * *"}]`。Production 保持禁用，确认数据库连通性、TLS、最小权限和水位后再启用。
+3. 正式部署使用 `0 1 * * *`，即每天北京时间 09:00 所在的小时。Hobby 在该小时内触发。核对正式数据库连通性、TLS、最小权限和初始 JOB_MONITOR 水位后，再启用 Production 执行开关。
 4. 如需停用，先在 Vercel 控制台关闭 Cron，或更新禁用开关并重新部署。回滚部署时另行核对活跃的 Cron 配置。保留当前数据库水位。
 
 Vercel 原生 Cron 在失败后不会补跑同一次请求。下次触发由应用按已有水位和通知状态继续处理。CONSOLE 输出在函数日志中。
