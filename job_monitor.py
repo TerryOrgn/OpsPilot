@@ -207,17 +207,13 @@ def monitor_jobs(*, checkpoint_name=None, execution_id=None):
 
         # 2. 查询增量JOB
 
-        incremental_jobs, scan_upper_bound = get_incremental_jobs(
-            last_scan_time,
-            overlap_minutes=5
-        )
-
         if execution_id is None:
+            incremental_jobs, scan_upper_bound = get_incremental_jobs(last_scan_time, overlap_minutes=5)
             running_jobs = get_running_jobs()
         else:
-            incremental_jobs = [
-                job for job in incremental_jobs if job["EXECUTION_ID"] == execution_id
-            ]
+            incremental_jobs, scan_upper_bound = get_incremental_jobs(
+                last_scan_time, overlap_minutes=5, execution_id=execution_id
+            )
             selected_job = get_job_by_execution_id(execution_id)
             running_jobs = [selected_job] if selected_job else []
 

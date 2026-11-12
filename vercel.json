@@ -10,6 +10,9 @@
       "includeFiles": "job_ui_web/**"
     }
   },
+  "crons": [
+    { "path": "/api/job-cron", "schedule": "0 1 * * *" }
+  ],
   "rewrites": [
     {
       "source": "/api/job-cron",
