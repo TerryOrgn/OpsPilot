@@ -116,5 +116,10 @@ class handler(BaseHTTPRequestHandler):
                 "job_cron_failed error_type=%s code=%s cause=%s",
                 type(exc).__name__, code, type(cause).__name__ if cause else None,
             )
-            return self.reply(500, {"status": "failed"})
+            result = {"status": "failed"}
+            if os.getenv("VERCEL_ENV") == "preview":
+                result["error_type"] = type(exc).__name__
+                result["code"] = code
+                result["cause"] = type(cause).__name__ if cause else None
+            return self.reply(500, result)
         return self.reply(200, result)
