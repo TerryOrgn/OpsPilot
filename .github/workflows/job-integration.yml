@@ -15,7 +15,7 @@ jobs:
           MYSQL_USER: job_ci
           MYSQL_PASSWORD: job-ci-only
         ports:
-          - 3306/tcp
+          - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping --silent"
           --health-interval=5s
@@ -24,7 +24,7 @@ jobs:
     env:
       VERCEL: '1'
       MYSQL_HOST: 127.0.0.1
-      MYSQL_PORT: ${{ job.services.mysql.ports[3306] }}
+      MYSQL_PORT: "3306"
       MYSQL_USER: job_ci
       MYSQL_PASSWORD: job-ci-only
       MYSQL_DATABASE: opspilot_test
