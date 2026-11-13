@@ -22,4 +22,6 @@ jobs:
               "$1" test_audit_backoff_policy.py
               "$1" test_webhook_alert_notification_policy.py
               "$1" test_webhook_notification_policy_edge_cases.py
+              "$1" test_webhook_notification_recovery_health_serializer.py
+              "$1" test_webhook_notification_recovery_schema_version.py
             ' _ "$python_bin"
