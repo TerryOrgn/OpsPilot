@@ -13,12 +13,15 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
+      - run: python -m pip install mysql-connector-python==26.10.0
       - name: Run audited scripts without network access
         run: |
           test -z "$(git ls-files -- .env '**/.env')"
           python_bin="$(command -v python)"
           sudo unshare --net --setuid "$(id -u)" --setgid "$(id -g)" -- env -i PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
             bash -e -c '
+              "$1" test_audit_retry_policy.py
+              "$1" test_audit_retry_backoff.py
               "$1" test_audit_backoff_policy.py
               "$1" test_webhook_alert_notification_policy.py
               "$1" test_webhook_notification_policy_edge_cases.py
