@@ -1,0 +1,25 @@
+name: Legacy offline tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Run audited scripts without network access
+        run: |
+          test -z "$(git ls-files -- .env '**/.env')"
+          python_bin="$(command -v python)"
+          sudo unshare --net --setuid "$(id -u)" --setgid "$(id -g)" -- env -i PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+            bash -e -c '
+              "$1" test_audit_backoff_policy.py
+              "$1" test_webhook_alert_notification_policy.py
+              "$1" test_webhook_notification_policy_edge_cases.py
+            ' _ "$python_bin"
