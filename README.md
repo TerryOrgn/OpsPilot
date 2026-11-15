@@ -19,3 +19,11 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python run_job_acceptance.py
 ## 交付边界
 
 CONSOLE 通知是至少一次投递：输出后进程崩溃、确认前连接失败可能导致重复输出；token 防止旧 Worker 更新状态，不能撤销已发生的外部发送。失败计数包括发送失败和 PROCESSING 超时，累计三次进入 EXHAUSTED，成功不会重置已有失败次数。
+
+### 本地 JOB 告警 AI 分析
+
+按需分析需要额外安装 OpenAI Python SDK（验收版本：`python -m pip install openai==3.37.0`）。
+在本地 `.env` 设置 `OPENAI_API_KEY` 和 `OPSPILOT_JOB_AI_MODEL`。
+使用 DeepSeek 时，同时设置 `OPENAI_BASE_URL=https://api.deepseek.com`，模型可设为 `deepseek-flash`。
+重启看板，在 `opspilot_test` 创建失败 JOB 并运行监控，然后点击「AI 分析所选 JOB 告警」。
+模型只接收行号和状态，原因和建议用于辅助排查。模型不可用时页面仍保留已知事实。

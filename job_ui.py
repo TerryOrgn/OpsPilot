@@ -59,8 +59,11 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < size < 4096:
                 raise ValueError('Invalid request size')
             data = json.loads(self.rfile.read(size))
-            with service_lock:
-                result = service.action(data['action'], data.get('execution_id', ''))
+            if data['action'] == 'analyze':
+                result = service.analyze_selected(data.get('execution_id', ''))
+            else:
+                with service_lock:
+                    result = service.action(data['action'], data.get('execution_id', ''))
             self.reply(200, result)
         except (ValueError, KeyError, TypeError, AttributeError):
             self.reply(400, {'error': '请先选择本次会话创建的 JOB，并使用有效操作'})

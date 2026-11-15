@@ -25,6 +25,41 @@ def query(sql, args=(), read=False):
     finally:
         c.close()
 
+def analyze_selected(execution_id):
+    if execution_id not in owned:
+        raise ValueError('Unknown execution')
+    rows = query(
+        "SELECT j.STATUS FROM JOB_EXECUTION_LOG j JOIN JOB_ALERT_HISTORY a "
+        "ON a.EXECUTION_ID=j.EXECUTION_ID WHERE j.EXECUTION_ID=%s "
+        "AND j.STATUS='FAILED' AND a.ALERT_STATUS='OPEN' LIMIT 1",
+        (execution_id,), True,
+    )
+    if not rows:
+        return {"message": "所选 JOB 没有待分析的失败告警。"}
+    from job_ai_analysis import analyze_job_abnormalities
+    model = os.getenv("OPSPILOT_JOB_AI_MODEL")
+    client = None
+    if model and os.getenv("OPENAI_API_KEY"):
+        try:
+            from openai import OpenAI
+            client = OpenAI()
+        except (ImportError, ValueError):
+            pass
+    result = analyze_job_abnormalities(
+        dict(schema_version="1.1", tool_name="get_recent_abnormal_jobs",
+             jobs=[{"status": rows[0]["STATUS"]}], total_abnormal_count=1,
+             returned_count=1, abnormal_count=1, truncated=False),
+        client=client, model=model,
+    )
+    message = "已知事实：所选 JOB 执行失败，告警未关闭。"
+    if result["status"] == "ok":
+        message += " 可能原因：" + "；".join(result["possible_causes"])
+        message += " 排查建议：" + "；".join(result["next_steps"])
+    else:
+        message += " AI 分析暂不可用。"
+    return {"message": message}
+
+
 def action(name, execution_id=''):
     if name not in ('create', 'monitor', 'send', 'success', 'fail', 'crash', 'exhaust'):
         raise ValueError('Unknown action')
