@@ -8,7 +8,13 @@ from job_abnormal_summary import build_abnormal_summary
 def analyze_job_abnormalities(result, *, client, model):
     summary = build_abnormal_summary(result)
     evidence = [
-        {"row": index, "status": job.get("status")}
+        {
+            "row": index,
+            "status": job.get("status"),
+            **({"duration_seconds": job["duration_seconds"]}
+               if type(job.get("duration_seconds")) is int and job["duration_seconds"] >= 0
+               else {}),
+        }
         for index, job in enumerate(result["jobs"][:20], start=1)
         if isinstance(job, dict) and job.get("status") in ("FAILED", "TIMEOUT")
     ]

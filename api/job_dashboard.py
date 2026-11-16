@@ -96,7 +96,7 @@ class handler(BaseHTTPRequestHandler):
             try:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT j.STATUS FROM JOB_ALERT_HISTORY a JOIN JOB_EXECUTION_LOG j "
+                        "SELECT j.STATUS, TIMESTAMPDIFF(SECOND,j.START_TIME,j.END_TIME) AS DURATION_SECONDS FROM JOB_ALERT_HISTORY a JOIN JOB_EXECUTION_LOG j "
                         "ON j.EXECUTION_ID=a.EXECUTION_ID WHERE a.ID=%s "
                         "AND a.ALERT_STATUS='OPEN' AND j.STATUS='FAILED'", (alert_id,),
                     )
@@ -119,7 +119,7 @@ class handler(BaseHTTPRequestHandler):
                 logging.warning("Dashboard AI client unavailable type=%s", type(exc).__name__)
         result = analyze_job_abnormalities(
             dict(schema_version="1.1", tool_name="get_recent_abnormal_jobs",
-                 jobs=[{"status": row["STATUS"]}], total_abnormal_count=1,
+                 jobs=[{"status": row["STATUS"], "duration_seconds": row.get("DURATION_SECONDS")}], total_abnormal_count=1,
                  returned_count=1, abnormal_count=1, truncated=False),
             client=client, model=model,
         )

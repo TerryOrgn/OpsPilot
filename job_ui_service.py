@@ -29,7 +29,7 @@ def analyze_selected(execution_id):
     if execution_id not in owned:
         raise ValueError('Unknown execution')
     rows = query(
-        "SELECT j.STATUS FROM JOB_EXECUTION_LOG j JOIN JOB_ALERT_HISTORY a "
+        "SELECT j.STATUS, TIMESTAMPDIFF(SECOND,j.START_TIME,j.END_TIME) AS DURATION_SECONDS FROM JOB_EXECUTION_LOG j JOIN JOB_ALERT_HISTORY a "
         "ON a.EXECUTION_ID=j.EXECUTION_ID WHERE j.EXECUTION_ID=%s "
         "AND j.STATUS='FAILED' AND a.ALERT_STATUS='OPEN' LIMIT 1",
         (execution_id,), True,
@@ -47,7 +47,7 @@ def analyze_selected(execution_id):
             pass
     result = analyze_job_abnormalities(
         dict(schema_version="1.1", tool_name="get_recent_abnormal_jobs",
-             jobs=[{"status": rows[0]["STATUS"]}], total_abnormal_count=1,
+             jobs=[{"status": rows[0]["STATUS"], "duration_seconds": rows[0].get("DURATION_SECONDS")}], total_abnormal_count=1,
              returned_count=1, abnormal_count=1, truncated=False),
         client=client, model=model,
     )
