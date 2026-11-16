@@ -46,3 +46,15 @@ jobs:
           mysql_test -e "INSERT INTO JOB_MONITOR_CHECKPOINT (MONITOR_NAME, LAST_SCAN_TIME) VALUES ('JOB_MONITOR', NOW(3))"
       - name: Run JOB acceptance suite
         run: python run_job_acceptance.py
+      - name: Verify repository timeout conversion
+        env:
+          OPSPILOT_DB_NAME: opspilot_test
+          OPSPILOT_DB_TIMEOUT_FIXTURE: ci-timeout-fixture
+        run: |
+          python -m pip install mysql-connector-python==26.10.0
+          mysql_test() {
+            MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP --host="$MYSQL_HOST" --port="$MYSQL_PORT" --user="$MYSQL_USER" --database=opspilot_test "$@"
+          }
+          test "$(mysql_test -NBe 'SELECT DATABASE()')" = opspilot_test
+          mysql_test -e "INSERT INTO JOB_EXECUTION_LOG (EXECUTION_ID,SYSTEM_ID,JOB_NAME,BUSINESS_DATE,START_TIME,UPDATED_AT,STATUS) VALUES ('ci-timeout-fixture','TEST','CI timeout',CURRENT_DATE(),NOW()-INTERVAL 2 HOUR,NOW()-INTERVAL 2 HOUR,'RUNNING')"
+          OPSPILOT_DB_HOST="$MYSQL_HOST" OPSPILOT_DB_PORT="$MYSQL_PORT" OPSPILOT_DB_USER="$MYSQL_USER" OPSPILOT_DB_PASSWORD="$MYSQL_PASSWORD" python test_mysql_job_repository_live.py
