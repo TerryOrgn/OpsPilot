@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import db
+from job_ai_analysis import analyze_job_abnormalities
 
 WEB_ROOT = Path(__file__).resolve().parents[1] / "job_ui_web"
 ASSETS = {
@@ -19,7 +20,7 @@ ASSETS = {
 }
 
 
-def dashboard_state():
+def dashboard_connection():
     # Keep existing test deployments working while allowing a separate read-only account.
     prefix = "DASHBOARD_" if any(key.startswith("DASHBOARD_MYSQL_") for key in os.environ) else ""
     if (
@@ -30,7 +31,11 @@ def dashboard_state():
         raise RuntimeError("Dashboard requires a verified TLS connection to opspilot_test")
     if prefix and not os.getenv(prefix + "MYSQL_HOST"):
         raise RuntimeError("Dashboard requires an explicit database host")
-    connection = db.get_connection(env_prefix=prefix)
+    return db.get_connection(env_prefix=prefix)
+
+
+def dashboard_state():
+    connection = dashboard_connection()
     try:
         with connection.cursor() as cursor:
             result = {}
@@ -59,14 +64,70 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):
+    def authorized(self):
         password = os.getenv("OPSPILOT_DASHBOARD_PASSWORD")
         if not password:
-            return self.reply(503, {"error": "监控页面尚未配置访问密码"})
+            self.reply(503, {"error": "监控页面尚未配置访问密码"})
+            return False
         expected = b"Basic " + b64encode(("opspilot:" + password).encode())
         if not hmac.compare_digest(self.headers.get("Authorization", "").encode(), expected):
-            return self.reply(401, {"error": "请登录"}, challenge=True)
+            self.reply(401, {"error": "请登录"}, challenge=True)
+            return False
+        return True
 
+    def do_POST(self):
+        if not self.authorized():
+            return
+        if urlsplit(self.path).path != "/api/job_dashboard":
+            return self.reply(404, {"error": "页面不存在"})
+        if self.headers.get("X-OpsPilot-Action") != "analyze":
+            return self.reply(403, {"error": "请求未获授权"})
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 < size <= 256:
+                raise ValueError
+            alert_id = json.loads(self.rfile.read(size))["alert_id"]
+            if type(alert_id) is not int or not 0 < alert_id < 2**63:
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            return self.reply(400, {"error": "无效告警编号"})
+        try:
+            connection = dashboard_connection()
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT j.STATUS FROM JOB_ALERT_HISTORY a JOIN JOB_EXECUTION_LOG j "
+                        "ON j.EXECUTION_ID=a.EXECUTION_ID WHERE a.ID=%s "
+                        "AND a.ALERT_STATUS='OPEN' AND j.STATUS='FAILED'", (alert_id,),
+                    )
+                    row = cursor.fetchone()
+            finally:
+                connection.close()
+        except Exception as exc:
+            logging.error("Dashboard analysis read failed type=%s", type(exc).__name__)
+            return self.reply(503, {"error": "暂时无法读取测试库"})
+        if not row:
+            return self.reply(404, {"error": "此告警当前不可分析"})
+        model = os.getenv("DASHBOARD_AI_MODEL")
+        key = os.getenv("DASHBOARD_AI_API_KEY")
+        client = None
+        if model and key:
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+            except Exception as exc:
+                logging.warning("Dashboard AI client unavailable type=%s", type(exc).__name__)
+        result = analyze_job_abnormalities(
+            dict(schema_version="1.1", tool_name="get_recent_abnormal_jobs",
+                 jobs=[{"status": row["STATUS"]}], total_abnormal_count=1,
+                 returned_count=1, abnormal_count=1, truncated=False),
+            client=client, model=model,
+        )
+        return self.reply(200, result)
+
+    def do_GET(self):
+        if not self.authorized():
+            return
         request = urlsplit(self.path)
         params = parse_qs(request.query)
         path = request.path

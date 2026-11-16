@@ -25,11 +25,43 @@ function renderTable(id, rows) {
     cell.textContent = column;
     header.append(cell);
   }
+  const canAnalyze = cloudDashboard && id === 'alerts';
+  if (canAnalyze) header.insertCell().textContent = 'AI 分析';
   const body = table.createTBody();
   for (const row of rows) {
     const line = body.insertRow();
     for (const column of columns) {
       line.insertCell().textContent = row[column] ?? '—';
+    }
+    if (canAnalyze) {
+      const cell = line.insertCell();
+      if (row.ALERT_STATUS === 'OPEN' && row.ALERT_TYPE === 'JOB_FAILED') {
+        const button = document.createElement('button');
+        button.textContent = '分析';
+        const output = document.createElement('div');
+        output.setAttribute('role', 'status');
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          output.textContent = '分析中…';
+          try {
+            const result = await request('/api/job_dashboard', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-OpsPilot-Action': 'analyze' },
+              body: JSON.stringify({ alert_id: row.ID }),
+            });
+            output.textContent = '已知事实：所选 JOB 执行失败，告警未关闭。' +
+              (result.status === 'ok'
+                ? ' 可能原因：' + result.possible_causes.join('；') +
+                  ' 排查建议：' + result.next_steps.join('；')
+                : ' AI 分析暂不可用。');
+          } catch (error) {
+            output.textContent = error.message;
+          } finally {
+            button.disabled = false;
+          }
+        });
+        cell.append(button, output);
+      }
     }
   }
   container.append(table);
