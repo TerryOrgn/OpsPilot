@@ -9,7 +9,9 @@ from job_monitoring_tool import JobMonitoringTool
 
 
 def connection_factory():
-    return mysql.connector.connect(
+    if os.getenv("OPSPILOT_DB_NAME") != "opspilot_test":
+        raise RuntimeError("Live test requires explicit opspilot_test")
+    connection = mysql.connector.connect(
         host=os.getenv("OPSPILOT_DB_HOST", "127.0.0.1"),
         port=int(os.getenv("OPSPILOT_DB_PORT", "3306")),
         user=os.environ["OPSPILOT_DB_USER"],
@@ -17,6 +19,16 @@ def connection_factory():
         database=os.environ["OPSPILOT_DB_NAME"],
         connection_timeout=5,
     )
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT DATABASE()")
+            if cursor.fetchone() != ("opspilot_test",):
+                raise RuntimeError("Connected database is not opspilot_test")
+    except Exception:
+        connection.close()
+        raise
+    return connection
 
 
 def main():
@@ -42,9 +54,13 @@ def main():
 
     result = tool.execute(limit=10)
 
-    assert result["schema_version"] == "1.0"
+    assert result["schema_version"] == "1.1"
     assert result["tool_name"] == "get_recent_abnormal_jobs"
     assert result["abnormal_count"] == len(result["jobs"])
+
+    assert result["returned_count"] == result["abnormal_count"]
+    assert result["total_abnormal_count"] >= result["returned_count"]
+    assert result["truncated"] is (result["total_abnormal_count"] > result["returned_count"])
 
     for job in result["jobs"]:
         assert job["status"] in {"FAILED", "TIMEOUT"}
