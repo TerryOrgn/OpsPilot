@@ -27,4 +27,8 @@ jobs:
               "$1" test_webhook_notification_policy_edge_cases.py
               "$1" test_webhook_notification_recovery_health_serializer.py
               "$1" test_webhook_notification_recovery_schema_version.py
+              "$1" test_job_abnormal_summary_module.py
+              "$1" test_job_timeout_detector.py
+              "$1" test_job_monitoring_timeout_integration.py
+              "$1" test_job_tool_timeout_truncation.py
             ' _ "$python_bin"
