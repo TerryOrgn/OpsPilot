@@ -100,6 +100,16 @@ def main():
         for job in timeout_jobs
     )
 
+    expected_timeout = os.getenv("OPSPILOT_DB_TIMEOUT_FIXTURE")
+    if expected_timeout:
+        assert any(
+            job["execution_id"] == expected_timeout
+            and job["original_status"] == "RUNNING"
+            and job["detected_status"] == "TIMEOUT"
+            for job in timeout_jobs
+        ), "Expected fixture did not transition from RUNNING to TIMEOUT"
+        print("[LIVE] RUNNING_TO_TIMEOUT=PASS")
+
     print("[LIVE] TIMEOUT_DETECTION=PASS")
     print(
         "[LIVE] DETECTED_ABNORMAL_COUNT=",
