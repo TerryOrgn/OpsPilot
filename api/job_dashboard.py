@@ -20,6 +20,32 @@ ASSETS = {
 }
 
 
+def dashboard_read_error(exc):
+    """Return fixed messages without exposing connection details."""
+    import ssl
+
+    chain = []
+    current = exc
+    while current is not None and all(current is not item for item in chain):
+        chain.append(current)
+        current = (getattr(current, "original_exception", None)
+                   or current.__cause__ or current.__context__)
+    if any(isinstance(item, ssl.SSLCertVerificationError) for item in chain):
+        return "测试库 TLS 证书校验失败，请检查 CA 证书和主机名"
+    code = exc.args[0] if exc.args and type(exc.args[0]) is int else None
+    messages = {
+        1045: "测试库账号认证失败，请检查数据库用户名和密码",
+        1044: "测试库访问被拒绝，请检查账号授权",
+        1142: "测试库表操作被拒绝，请检查看板只读权限",
+        2003: "暂时无法连接测试库，请检查主机、端口及网络",
+    }
+    if code in messages:
+        return messages[code]
+    if isinstance(exc, RuntimeError):
+        return "测试库连接配置校验失败，请检查库名、TLS 开关和主机配置"
+    return "暂时无法读取测试库，请查看服务端错误日志"
+
+
 def dashboard_connection():
     # Keep existing test deployments working while allowing a separate read-only account.
     prefix = "DASHBOARD_" if any(key.startswith("DASHBOARD_MYSQL_") for key in os.environ) else ""
@@ -147,7 +173,7 @@ class handler(BaseHTTPRequestHandler):
                     code,
                     type(cause).__name__ if cause else None,
                 )
-                return self.reply(503, {"error": "暂时无法读取测试库，请检查云端连接配置"})
+                return self.reply(503, {"error": dashboard_read_error(exc)})
         if path in ASSETS:
             name, content_type = ASSETS[path]
             body = (WEB_ROOT / name).read_bytes()
