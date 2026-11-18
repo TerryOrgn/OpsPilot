@@ -29,13 +29,13 @@ def analyze_selected(execution_id):
     if execution_id not in owned:
         raise ValueError('Unknown execution')
     rows = query(
-        "SELECT j.STATUS, TIMESTAMPDIFF(SECOND,j.START_TIME,j.END_TIME) AS DURATION_SECONDS FROM JOB_EXECUTION_LOG j JOIN JOB_ALERT_HISTORY a "
+        "SELECT j.STATUS, a.ALERT_TYPE, TIMESTAMPDIFF(SECOND,j.START_TIME,COALESCE(j.END_TIME,NOW(3))) AS DURATION_SECONDS FROM JOB_EXECUTION_LOG j JOIN JOB_ALERT_HISTORY a "
         "ON a.EXECUTION_ID=j.EXECUTION_ID WHERE j.EXECUTION_ID=%s "
-        "AND j.STATUS='FAILED' AND a.ALERT_STATUS='OPEN' LIMIT 1",
+        "AND a.ALERT_STATUS='OPEN' AND ((a.ALERT_TYPE='JOB_FAILED' AND j.STATUS='FAILED') OR (a.ALERT_TYPE='JOB_TIMEOUT' AND j.STATUS IN ('RUNNING','SUCCESS'))) LIMIT 1",
         (execution_id,), True,
     )
     if not rows:
-        return {"message": "所选 JOB 没有待分析的失败告警。"}
+        return {"message": "所选 JOB 没有待分析的失败或超时告警。"}
     from job_ai_analysis import analyze_job_abnormalities
     model = os.getenv("OPSPILOT_JOB_AI_MODEL")
     client = None
@@ -47,11 +47,13 @@ def analyze_selected(execution_id):
             pass
     result = analyze_job_abnormalities(
         dict(schema_version="1.1", tool_name="get_recent_abnormal_jobs",
-             jobs=[{"status": rows[0]["STATUS"], "duration_seconds": rows[0].get("DURATION_SECONDS")}], total_abnormal_count=1,
+             jobs=[{"status": rows[0]["STATUS"], "alert_type": rows[0]["ALERT_TYPE"], "duration_seconds": rows[0].get("DURATION_SECONDS")}], total_abnormal_count=1,
              returned_count=1, abnormal_count=1, truncated=False),
         client=client, model=model,
     )
-    message = "已知事实：所选 JOB 执行失败，告警未关闭。"
+    message = ("已知事实：所选 JOB 存在超时告警，告警未关闭。"
+               if rows[0]["ALERT_TYPE"] == "JOB_TIMEOUT"
+               else "已知事实：所选 JOB 执行失败，告警未关闭。")
     if result["status"] == "ok":
         message += " 可能原因：" + "；".join(result["possible_causes"])
         message += " 排查建议：" + "；".join(result["next_steps"])

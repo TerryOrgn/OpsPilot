@@ -46,6 +46,36 @@ class UITests(unittest.TestCase):
 
 
 class AIAnalysisTests(unittest.TestCase):
+    def test_timeout_analysis_preserves_execution_status(self):
+        import json
+        from job_ai_analysis import analyze_job_abnormalities
+
+        for status in ("RUNNING", "SUCCESS"):
+            with self.subTest(status=status):
+                client = MagicMock()
+                create = client.with_options.return_value.responses.create
+                create.return_value.output_text = '{"possible_causes":["待核实"],"next_steps":["查看日志"]}'
+                result = dict(
+                    schema_version="1.1", tool_name="get_recent_abnormal_jobs",
+                    jobs=[{"status": status, "alert_type": "JOB_TIMEOUT", "duration_seconds": 7200}],
+                    total_abnormal_count=1, returned_count=1, abnormal_count=1, truncated=False,
+                )
+                report = analyze_job_abnormalities(result, client=client, model="fake")
+                self.assertEqual(report["status"], "ok")
+                self.assertEqual(json.loads(create.call_args.kwargs["input"]), [
+                    {"row": 1, "status": status, "alert_type": "JOB_TIMEOUT", "duration_seconds": 7200}
+                ])
+
+    def test_local_timeout_analysis_uses_timeout_facts(self):
+        for status in ("RUNNING", "SUCCESS"):
+            with self.subTest(status=status), patch.dict(service.owned, {"fixture": True}, clear=True), patch(
+                "job_ui_service.query",
+                return_value=[{"STATUS": status, "ALERT_TYPE": "JOB_TIMEOUT", "DURATION_SECONDS": 7200}],
+            ), patch.dict(os.environ, {}, clear=True):
+                message = service.analyze_selected("fixture")["message"]
+                self.assertIn("超时告警", message)
+                self.assertNotIn("执行失败", message)
+
     def test_allowlisted_evidence_and_model_fallback(self):
         import json
         from unittest.mock import Mock
