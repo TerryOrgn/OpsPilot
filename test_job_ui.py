@@ -8,6 +8,25 @@ import job_ui
 
 class UITests(unittest.TestCase):
 
+    def test_dashboard_error_messages_are_sanitized(self):
+        import ssl
+
+        cases = [
+            (RuntimeError("secret"), "配置校验失败"),
+            (Exception(1045, "secret"), "账号认证失败"),
+            (Exception(1142, "secret"), "只读权限"),
+            (Exception(2003, "secret"), "主机、端口及网络"),
+            (ValueError("secret"), "服务端错误日志"),
+        ]
+        wrapped = Exception(2003, "secret")
+        wrapped.__cause__ = ssl.SSLCertVerificationError("secret")
+        cases.append((wrapped, "TLS 证书校验失败"))
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                message = job_dashboard.dashboard_read_error(error)
+                self.assertIn(expected, message)
+                self.assertNotIn("secret", message)
+
     def test_unknown_record_rejected(self):
         with self.assertRaises(ValueError):
             service.action('success', 'unowned')
