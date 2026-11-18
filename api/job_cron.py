@@ -6,6 +6,7 @@ import os
 import re
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlsplit
 
 from db import get_connection, get_job_by_execution_id
 from job_monitor import monitor_jobs
@@ -26,7 +27,7 @@ def preview_execution_id():
     return execution_id
 
 
-def preview_notification_ids(execution_id, config):
+def scoped_notification_ids(execution_id, config):
     with closing(get_connection()) as connection, connection.cursor() as cursor:
         cursor.execute(
             """
@@ -46,10 +47,17 @@ def preview_notification_ids(execution_id, config):
         return [row["ID"] for row in cursor.fetchall()]
 
 
-def run_cycle():
+
+def production_test_execution_id(value):
+    if not re.fullmatch(r"PRODTEST_[0-9a-f]{20}", value):
+        raise ValueError("Invalid production test fixture identifier")
+    return value
+
+
+def run_cycle(*, scoped_execution_id=None):
     config = RuntimeConfig.from_env()
     configure_logging(config.log_level)
-    execution_id = preview_execution_id() if os.getenv("VERCEL_ENV") == "preview" else None
+    execution_id = preview_execution_id() if os.getenv("VERCEL_ENV") == "preview" else scoped_execution_id
     if execution_id:
         check_readiness(config, checkpoint_name=execution_id)
     else:
@@ -59,12 +67,13 @@ def run_cycle():
     def process():
         if execution_id:
             fixture = get_job_by_execution_id(execution_id)
-            if not fixture or fixture["SYSTEM_ID"] != "PREVIEW_TEST":
-                raise ValueError("Preview fixture is missing or has the wrong system ID")
+            expected_system = ("PREVIEW_TEST" if os.getenv("VERCEL_ENV") == "preview" else "OPSPILOT_PRODUCTION_TEST")
+            if not fixture or fixture["SYSTEM_ID"] != expected_system:
+                raise ValueError("Scoped fixture is missing or has the wrong system ID")
             monitor_jobs(checkpoint_name=execution_id, execution_id=execution_id)
             stats = [
                 {"id": notification_id, **run_notification_batch(config, notification_id=notification_id)}
-                for notification_id in preview_notification_ids(execution_id, config)
+                for notification_id in scoped_notification_ids(execution_id, config)
             ]
         else:
             monitor_jobs()
@@ -107,8 +116,16 @@ class handler(BaseHTTPRequestHandler):
         else:
             return self.reply(503, {"status": "unsupported_environment"})
 
+        scoped_execution_id = None
+        if os.getenv("VERCEL_ENV") == "production":
+            query = parse_qs(urlsplit(self.path).query)
+            if "execution_id" in query:
+                try:
+                    scoped_execution_id = production_test_execution_id(query["execution_id"][0])
+                except (ValueError, IndexError):
+                    return self.reply(400, {"status": "invalid_test_fixture"})
         try:
-            result = run_cycle()
+            result = run_cycle(scoped_execution_id=scoped_execution_id)
         except Exception as exc:
             code = exc.args[0] if exc.args and type(exc.args[0]) is int else None
             cause = getattr(exc, "original_exception", None) or exc.__cause__ or exc.__context__
