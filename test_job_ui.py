@@ -62,12 +62,26 @@ class AIAnalysisTests(unittest.TestCase):
         self.assertEqual(report["status"], "ok")
         self.assertEqual(json.loads(create.call_args.kwargs["input"]),
                          [{"row": 1, "status": "FAILED", "duration_seconds": 42}])
-        create.return_value.output_text = "{}"
-        self.assertEqual(analyze_job_abnormalities(result, client=client, model="fake")["status"],
-                         "unavailable")
-        create.side_effect = TimeoutError
-        fallback = analyze_job_abnormalities(result, client=client, model="fake")
-        self.assertEqual(fallback, {"status": "unavailable", "facts": report["facts"]})
+        client.with_options.assert_called_once_with(timeout=10, max_retries=0)
+        expected_fallback = {"status": "unavailable", "facts": report["facts"]}
+
+        for output in ("{}", "{invalid JSON"):
+            with self.subTest(output=output):
+                create.return_value.output_text = output
+                self.assertEqual(
+                    analyze_job_abnormalities(result, client=client, model="fake"),
+                    expected_fallback,
+                )
+
+        for error in (TimeoutError, ConnectionError):
+            with self.subTest(error=error):
+                create.side_effect = error
+                self.assertEqual(
+                    analyze_job_abnormalities(result, client=client, model="fake"),
+                    expected_fallback,
+                )
+
+        self.assertEqual(analyze_job_abnormalities(result, client=None, model=None), expected_fallback)
 
 
 if __name__ == '__main__':
