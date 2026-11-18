@@ -67,3 +67,14 @@ run_job_acceptance.py：运行配置、日志脱敏、SIGTERM、双任务注册�
 ## 初始化新环境
 
 维护账号先选择经过核对的空库，通过 `SELECT DATABASE()` 确认目标，再执行 [JOB v1 schema 基线](../migrations/001_job_monitor.sql)。集成测试目标只能是 opspilot_test。已有库按变更评审后的增量迁移升级。初始化默认 JOB_MONITOR 水位前须确认从哪个时间开始扫描，避免重放历史或跳过待处理记录。
+
+## 2026-11-18 凭据轮换验收记录
+
+- Preview 看板使用 opspilot_dashboard_v2，测试库为 opspilot_test。Production 看板使用相同只读账号访问测试库，两处页面读取均由操作者确认正常。
+- Preview 巡检使用 opspilot_cron_v2，已验证隔离 checkpoint 推进，以及新失败 JOB 的告警和通知链路。通知 69 返回 sent=1、failed=0、SENT。操作者已关闭 Preview 执行开关并重新部署。
+- Production 巡检已切换到 opspilot_prod_cron_v2，目标库为 opspilot。2026-11-18 手工调用返回 completed，日志确认 checkpoint 推进到北京时间 11:35:56。本轮没有 JOB 或通知待处理，正式库告警新增和通知发送仍待有事件时验证。
+- 旧账号 opspilot@% 的 account_locked=Y，由操作者提供查询结果确认。账号锁定阻止新连接，已有会话可能继续存活。
+- 本地配置使用 opspilot_test 账号。AI 实际服务为 DeepSeek，本地、Preview 和 Production 新密钥分析均验证成功，操作者确认旧 AI 密钥已删除。
+- Vercel 自动 Cron 触发仍待独立验收。Production 执行开关由操作者确认保持为 1。需核对定时窗口的请求来源、运行结果和 checkpoint 推进，手工调用仅验证运行链路。
+
+运行记录仅包含账号名及验收事实。新账号权限沿用本手册的表级最小权限清单。维护人员应分别管理看板、巡检及模型服务凭据，并保留对应环境的部署与轮换记录。
