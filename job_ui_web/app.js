@@ -35,7 +35,7 @@ function renderTable(id, rows) {
     }
     if (canAnalyze) {
       const cell = line.insertCell();
-      if (row.ALERT_STATUS === 'OPEN' && row.ALERT_TYPE === 'JOB_FAILED') {
+      if (row.ALERT_STATUS === 'OPEN' && ['JOB_FAILED', 'JOB_TIMEOUT'].includes(row.ALERT_TYPE)) {
         const button = document.createElement('button');
         button.textContent = '分析';
         const output = document.createElement('div');

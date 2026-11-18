@@ -11,12 +11,15 @@ def analyze_job_abnormalities(result, *, client, model):
         {
             "row": index,
             "status": job.get("status"),
+            **({"alert_type": "JOB_TIMEOUT"} if job.get("alert_type") == "JOB_TIMEOUT" else {}),
             **({"duration_seconds": job["duration_seconds"]}
                if type(job.get("duration_seconds")) is int and job["duration_seconds"] >= 0
                else {}),
         }
         for index, job in enumerate(result["jobs"][:20], start=1)
-        if isinstance(job, dict) and job.get("status") in ("FAILED", "TIMEOUT")
+        if isinstance(job, dict) and (job.get("status") in ("FAILED", "TIMEOUT")
+                                     or (job.get("alert_type") == "JOB_TIMEOUT"
+                                         and job.get("status") in ("RUNNING", "SUCCESS")))
     ]
     report = {"facts": {"summary": summary, "rows": evidence}}
     if not evidence:
