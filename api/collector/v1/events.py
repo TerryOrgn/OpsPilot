@@ -114,8 +114,8 @@ class handler(BaseHTTPRequestHandler):
         # may report skipped when another invocation is active; the next Cron run recovers.
         result["monitoring"] = "deferred"
         if (
-            os.getenv("VERCEL_ENV") == "production"
-            and os.getenv("OPSPILOT_INGEST_TRIGGER_MONITOR") == "1"
+            os.getenv("VERCEL_ENV") in ("production", "preview")
+            and os.getenv("OPSPILOT_INGEST_TRIGGER_MONITOR") == "1
             and os.getenv("OPSPILOT_CRON_ENABLED") == "1"
             and (result["accepted_event_ids"] or result["duplicate_event_ids"])
         ):
