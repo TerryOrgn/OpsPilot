@@ -78,3 +78,10 @@ run_job_acceptance.py：运行配置、日志脱敏、SIGTERM、双任务注册�
 - Vercel 自动 Cron 触发仍待独立验收。Production 执行开关由操作者确认保持为 1。需核对定时窗口的请求来源、运行结果和 checkpoint 推进，手工调用仅验证运行链路。
 
 运行记录仅包含账号名及验收事实。新账号权限沿用本手册的表级最小权限清单。维护人员应分别管理看板、巡检及模型服务凭据，并保留对应环境的部署与轮换记录。
+
+## 2026-11-19 Production 受限验收
+
+- Production 部署通过 `/api/job-cron?execution_id=PRODTEST_dc9a048ee3ba11f1b5f6` 完成单 JOB 验收。日志显示仅扫描该记录及独立 checkpoint，未处理其他 JOB。
+- 合成 FAILED 记录创建 `JOB_FAILED` 告警，通知成功发送，`failed=0`。将记录改为 SUCCESS 后，系统关闭失败告警并创建了超时告警，因为首次合成开始时间早于当前时间约 12 秒。将合成执行时长调整为 1 秒后，系统关闭超时告警并发送恢复通知。各轮通知均成功，最终返回 HTTP 200。
+- 单 JOB checkpoint 连续推进。执行 ID 为 `PRODTEST_dc9a048ee3ba11f1b5f6` 的合成 JOB、关联告警、状态历史、通知和专用 checkpoint 已由操作者确认清理。
+- Production 定时 Cron 于北京时间 11 月 19 日 09:07 返回 HTTP 200，默认 checkpoint 从 11 月 18 日 11:35:56 推进到 11 月 19 日 09:08:04。时间与 Vercel 计划窗口一致，日志未显式标明触发来源。
