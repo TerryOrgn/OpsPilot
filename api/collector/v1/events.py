@@ -43,7 +43,7 @@ def ingest_events(events, *, system_id):
             try:
                 event, digest = normalize_event(value, configured_system_id=system_id)
             except ValueError as exc:
-                rejected.append({"event_id": event_id if isinstance(event_id, str) else None,
+                rejected.append({"event_id": event_id[:200] if isinstance(event_id, str) else None,
                                  "reason": str(exc)[:100]})
                 continue
             result = apply_event(connection, event, digest)
