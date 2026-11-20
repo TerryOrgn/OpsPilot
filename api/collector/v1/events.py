@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import re
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
@@ -108,13 +109,35 @@ class handler(BaseHTTPRequestHandler):
             result = ingest_events(payload["events"], system_id=os.environ["OPSPILOT_INGEST_SYSTEM_ID"])
         except Exception as exc:
             error_code = None
+            network_errno = None
+            connection_failure = None
             if type(exc).__module__.startswith("pymysql.") and exc.args:
                 candidate_code = exc.args[0]
                 if type(candidate_code) is int:
                     error_code = candidate_code
+            if error_code == 2003 and len(exc.args) > 1 and isinstance(exc.args[1], str):
+                detail = exc.args[1].lower()
+                errno_match = re.search(r"\[errno\s+(-?\d+)\]", detail)
+                if errno_match:
+                    network_errno = int(errno_match.group(1))
+                if "timed out" in detail:
+                    connection_failure = "timeout"
+                elif "refused" in detail:
+                    connection_failure = "refused"
+                elif any(marker in detail for marker in (
+                    "name or service not known", "temporary failure in name resolution",
+                    "getaddrinfo failed", "nodename nor servname",
+                )):
+                    connection_failure = "dns"
+                elif "no route to host" in detail:
+                    connection_failure = "no_route"
+                else:
+                    connection_failure = "other"
             logging.error(
-                "job_ingest_failed error_type=%s error_module=%s error_code=%s",
+                "job_ingest_failed error_type=%s error_module=%s error_code=%s "
+                "network_errno=%s connection_failure=%s",
                 type(exc).__name__, type(exc).__module__, error_code,
+                network_errno, connection_failure,
             )
             return self.reply(503, {"status": "temporarily_unavailable"})
 
