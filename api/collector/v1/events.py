@@ -117,7 +117,7 @@ class handler(BaseHTTPRequestHandler):
                     error_code = candidate_code
             if error_code == 2003 and len(exc.args) > 1 and isinstance(exc.args[1], str):
                 detail = exc.args[1].lower()
-                errno_match = re.search(r"\\[errno\\s+(-?\\d+)\\]", detail)
+                errno_match = re.search(r"\[errno\s+(-?\d+)\]", detail)
                 if errno_match:
                     network_errno = int(errno_match.group(1))
                 if "timed out" in detail:
