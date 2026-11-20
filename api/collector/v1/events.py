@@ -107,7 +107,15 @@ class handler(BaseHTTPRequestHandler):
         try:
             result = ingest_events(payload["events"], system_id=os.environ["OPSPILOT_INGEST_SYSTEM_ID"])
         except Exception as exc:
-            logging.error("job_ingest_failed error_type=%s", type(exc).__name__)
+            error_code = None
+            if type(exc).__module__.startswith("pymysql.") and exc.args:
+                candidate_code = exc.args[0]
+                if type(candidate_code) is int:
+                    error_code = candidate_code
+            logging.error(
+                "job_ingest_failed error_type=%s error_module=%s error_code=%s",
+                type(exc).__name__, type(exc).__module__, error_code,
+            )
             return self.reply(503, {"status": "temporarily_unavailable"})
 
         # Event data is committed before monitoring. The Cron cycle shares its lock and
