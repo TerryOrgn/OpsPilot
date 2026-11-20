@@ -1,9 +1,11 @@
 """Authenticated v1 single-system event ingestion for the customer-side collector."""
+import errno as os_errno
 import hmac
 import json
 import logging
 import os
-import re
+import socket
+import ssl
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
@@ -115,29 +117,36 @@ class handler(BaseHTTPRequestHandler):
                 candidate_code = exc.args[0]
                 if type(candidate_code) is int:
                     error_code = candidate_code
-            if error_code == 2003 and len(exc.args) > 1 and isinstance(exc.args[1], str):
-                detail = exc.args[1].lower()
-                errno_match = re.search(r"\[errno\s+(-?\d+)\]", detail)
-                if errno_match:
-                    network_errno = int(errno_match.group(1))
-                if "timed out" in detail:
-                    connection_failure = "timeout"
-                elif "refused" in detail:
-                    connection_failure = "refused"
-                elif any(marker in detail for marker in (
-                    "name or service not known", "temporary failure in name resolution",
-                    "getaddrinfo failed", "nodename nor servname",
-                )):
+            original_error = getattr(exc, "original_exception", None)
+            original_error_type = None
+            if error_code == 2003 and original_error is not None:
+                original_error_type = type(original_error).__name__
+                candidate_errno = getattr(original_error, "errno", None)
+                if type(candidate_errno) is int:
+                    network_errno = candidate_errno
+                if isinstance(original_error, ssl.SSLCertVerificationError):
+                    connection_failure = "tls_certificate"
+                elif isinstance(original_error, ssl.SSLError):
+                    connection_failure = "tls"
+                elif isinstance(original_error, socket.gaierror):
                     connection_failure = "dns"
-                elif "no route to host" in detail:
+                elif isinstance(original_error, TimeoutError) or network_errno == os_errno.ETIMEDOUT:
+                    connection_failure = "timeout"
+                elif network_errno == os_errno.ECONNREFUSED:
+                    connection_failure = "refused"
+                elif network_errno in (os_errno.EHOSTUNREACH, os_errno.ENETUNREACH):
                     connection_failure = "no_route"
+                elif isinstance(original_error, OSError):
+                    connection_failure = "other_os"
                 else:
                     connection_failure = "other"
+            elif error_code == 2003:
+                connection_failure = "unavailable"
             logging.error(
                 "job_ingest_failed error_type=%s error_module=%s error_code=%s "
-                "network_errno=%s connection_failure=%s",
+                "original_error_type=%s network_errno=%s connection_failure=%s",
                 type(exc).__name__, type(exc).__module__, error_code,
-                network_errno, connection_failure,
+                original_error_type, network_errno, connection_failure,
             )
             return self.reply(503, {"status": "temporarily_unavailable"})
 
